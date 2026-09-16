@@ -129,6 +129,14 @@ const modifiedText = computed(() => {
 <style scoped>
 .story-card {
   cursor: pointer;
+  height: 100%;
+}
+
+/* Card cao bằng nhau theo hàng grid → content dãn dọc, meta pin xuống đáy */
+.story-card :deep(.n-card__content) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .story-name {
@@ -171,7 +179,8 @@ const modifiedText = computed(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: 8px;
+  margin-top: auto;
+  padding-top: 8px;
   min-height: 22px;
 }
 

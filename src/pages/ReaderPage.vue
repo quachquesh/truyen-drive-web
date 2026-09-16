@@ -1,138 +1,140 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { NButton, NCard, NConfigProvider, NEmpty, NSelect, NSpace, NSpin, NText } from 'naive-ui'
-import { darkTheme } from 'naive-ui'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { NButton, NCard, NConfigProvider, NEmpty, NSelect, NSpace, NSpin, NText } from "naive-ui";
+import { darkTheme } from "naive-ui";
 
-import PdfReader from '@/components/PdfReader.vue'
-import ReaderImage from '@/components/ReaderImage.vue'
-import AppIcon from '@/components/AppIcon.vue'
-import { toErrorMessage } from '@/lib/driveApi'
-import { getProgress, putProgress } from '@/lib/db'
+import PdfReader from "@/components/PdfReader.vue";
+import ReaderImage from "@/components/ReaderImage.vue";
+import AppIcon from "@/components/AppIcon.vue";
+import { toErrorMessage } from "@/lib/driveApi";
+import { getProgress, putProgress } from "@/lib/db";
 import {
   ensureChapterFiles,
   type ChapterFile,
   type ChapterRef,
   type ChapterWithFiles,
-} from '@/lib/scanner'
-import { useStoriesStore } from '@/stores/stories'
-import { useSyncStore } from '@/stores/sync'
+} from "@/lib/scanner";
+import { useStoriesStore } from "@/stores/stories";
+import { useSyncStore } from "@/stores/sync";
 
-const route = useRoute()
-const router = useRouter()
-const storiesStore = useStoriesStore()
-const syncStore = useSyncStore()
+const route = useRoute();
+const router = useRouter();
+const storiesStore = useStoriesStore();
+const syncStore = useSyncStore();
 
-const libId = computed(() => (typeof route.params.libId === 'string' ? route.params.libId : ''))
+const libId = computed(() => (typeof route.params.libId === "string" ? route.params.libId : ""));
 const storyId = computed(() =>
-  typeof route.params.storyId === 'string' ? route.params.storyId : '',
-)
+  typeof route.params.storyId === "string" ? route.params.storyId : "",
+);
 const chapterId = computed(() =>
-  typeof route.params.chapterId === 'string' ? route.params.chapterId : '',
-)
-const progressKey = computed(() => `${libId.value}:${storyId.value}`)
+  typeof route.params.chapterId === "string" ? route.params.chapterId : "",
+);
+const progressKey = computed(() => `${libId.value}:${storyId.value}`);
 
-const chapters = ref<ChapterRef[]>([])
-const chapterFiles = ref<ChapterWithFiles | null>(null)
-const filesLoading = ref(false)
-const loading = ref(false)
-const loadError = ref('')
-const pdfLoading = ref(false)
-const toolbarVisible = ref(true)
+const chapters = ref<ChapterRef[]>([]);
+const chapterFiles = ref<ChapterWithFiles | null>(null);
+const filesLoading = ref(false);
+const loading = ref(false);
+const loadError = ref("");
+const pdfLoading = ref(false);
+const toolbarVisible = ref(true);
 
-const scrollEl = ref<HTMLElement | null>(null)
-let lastScrollTop = 0
-let saveTimer: number | undefined
-let triedRescan = false
+const scrollEl = ref<HTMLElement | null>(null);
+let lastScrollTop = 0;
+let saveTimer: number | undefined;
+let triedRescan = false;
 
-const chapter = computed(() => chapters.value.find((item) => item.id === chapterId.value))
-const chapterIndex = computed(() => chapters.value.findIndex((item) => item.id === chapterId.value))
-const prevChapter = computed(() => chapters.value[chapterIndex.value - 1])
-const nextChapter = computed(() => chapters.value[chapterIndex.value + 1])
+const chapter = computed(() => chapters.value.find((item) => item.id === chapterId.value));
+const chapterIndex = computed(() =>
+  chapters.value.findIndex((item) => item.id === chapterId.value),
+);
+const prevChapter = computed(() => chapters.value[chapterIndex.value - 1]);
+const nextChapter = computed(() => chapters.value[chapterIndex.value + 1]);
 
-/** Bộ chọn chapter nhanh trên toolbar — gõ số/tên là nhảy được xa (15/100 → 50) */
+/** Bộ chọn chapter nhanh trên toolbar — gõ tên/số trong tên chapter là nhảy được */
 const chapterOptions = computed(() =>
-  chapters.value.map((item, index) => ({ label: `${index + 1}. ${item.name}`, value: item.id })),
-)
+  chapters.value.map((item) => ({ label: item.name, value: item.id })),
+);
 
 /** Kiểu đọc chapter có cả ảnh lẫn PDF trọn bộ — nhớ lựa chọn của user */
-const READER_MODE_KEY = 'tdw-reader-mode'
-type ReaderMode = 'images' | 'pdf'
+const READER_MODE_KEY = "tdw-reader-mode";
+type ReaderMode = "images" | "pdf";
 const readerMode = ref<ReaderMode>(
-  localStorage.getItem(READER_MODE_KEY) === 'pdf' ? 'pdf' : 'images',
-)
+  localStorage.getItem(READER_MODE_KEY) === "pdf" ? "pdf" : "images",
+);
 watch(readerMode, (mode) => {
-  localStorage.setItem(READER_MODE_KEY, mode)
-})
+  localStorage.setItem(READER_MODE_KEY, mode);
+});
 
 /** Chapter có ảnh + PDF đi kèm → cho chọn kiểu đọc (chapter PDF-only thì luôn PDF) */
 const hasPdfOption = computed(
   () => chapterFiles.value?.isPdf === false && Boolean(chapterFiles.value?.pdfFile),
-)
+);
 const usePdf = computed(
-  () => chapterFiles.value?.isPdf === true || (hasPdfOption.value && readerMode.value === 'pdf'),
-)
+  () => chapterFiles.value?.isPdf === true || (hasPdfOption.value && readerMode.value === "pdf"),
+);
 const pdfToRender = computed<ChapterFile | null>(() => {
-  const current = chapterFiles.value
-  if (!current) return null
-  if (current.isPdf) return current.files[0] ?? null
-  return current.pdfFile
-})
+  const current = chapterFiles.value;
+  if (!current) return null;
+  if (current.isPdf) return current.files[0] ?? null;
+  return current.pdfFile;
+});
 
 async function loadChapter(force: boolean): Promise<void> {
-  loading.value = true
-  loadError.value = ''
+  loading.value = true;
+  loadError.value = "";
   try {
-    const result = await storiesStore.ensureChapters(libId.value, storyId.value, { force })
-    chapters.value = result
+    const result = await storiesStore.ensureChapters(libId.value, storyId.value, { force });
+    chapters.value = result;
 
-    const exists = result.some((item) => item.id === chapterId.value)
+    const exists = result.some((item) => item.id === chapterId.value);
     if (!exists && !force && !triedRescan) {
       // Chapter không có trong cache — có thể Drive vừa thêm mới, quét lại
-      triedRescan = true
-      await loadChapter(true)
-      return
+      triedRescan = true;
+      await loadChapter(true);
+      return;
     }
     if (!exists) {
-      loadError.value = 'Không tìm thấy chapter này (có thể đã bị xóa khỏi Google Drive)'
-      return
+      loadError.value = "Không tìm thấy chapter này (có thể đã bị xóa khỏi Google Drive)";
+      return;
     }
 
-    await loadChapterFiles()
-    await recordOpenChapter()
+    await loadChapterFiles();
+    await recordOpenChapter();
   } catch (error) {
-    loadError.value = toErrorMessage(error)
+    loadError.value = toErrorMessage(error);
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 /** Danh sách ảnh/PDF chỉ lấy khi mở chapter (cache IndexedDB trước) */
 async function loadChapterFiles(force = false): Promise<void> {
-  const current = chapter.value
-  if (!current) return
-  filesLoading.value = true
+  const current = chapter.value;
+  if (!current) return;
+  filesLoading.value = true;
   try {
-    chapterFiles.value = await ensureChapterFiles(current.id, current.name, { force })
+    chapterFiles.value = await ensureChapterFiles(current.id, current.name, { force });
   } finally {
-    filesLoading.value = false
+    filesLoading.value = false;
   }
 }
 
 /** Mở chapter → cập nhật tiến trình; F5 cùng chapter → khôi phục vị trí cuộn */
 async function recordOpenChapter(): Promise<void> {
-  const current = chapter.value
-  if (!current) return
+  const current = chapter.value;
+  if (!current) return;
 
-  const existing = await getProgress(progressKey.value)
+  const existing = await getProgress(progressKey.value);
   if (existing && existing.chapterId === current.id && existing.scrollPct > 0.01) {
-    await nextTick()
-    const el = scrollEl.value
+    await nextTick();
+    const el = scrollEl.value;
     if (el) {
-      const max = el.scrollHeight - el.clientHeight
-      el.scrollTop = existing.scrollPct * max
+      const max = el.scrollHeight - el.clientHeight;
+      el.scrollTop = existing.scrollPct * max;
     }
-    return
+    return;
   }
 
   await putProgress({
@@ -143,29 +145,29 @@ async function recordOpenChapter(): Promise<void> {
     chapterNo: chapterIndex.value >= 0 ? chapterIndex.value + 1 : undefined,
     chapterTotal: chapters.value.length || undefined,
     updatedAt: Date.now(),
-  })
-  syncStore.schedulePush()
+  });
+  syncStore.schedulePush();
 }
 
 function onScroll(): void {
-  const el = scrollEl.value
-  if (!el) return
-  const scrollTop = el.scrollTop
+  const el = scrollEl.value;
+  if (!el) return;
+  const scrollTop = el.scrollTop;
 
-  if (scrollTop > lastScrollTop + 6 && scrollTop > 60) toolbarVisible.value = false
-  else if (scrollTop < lastScrollTop - 6 || scrollTop < 40) toolbarVisible.value = true
-  lastScrollTop = scrollTop
+  if (scrollTop > lastScrollTop + 6 && scrollTop > 60) toolbarVisible.value = false;
+  else if (scrollTop < lastScrollTop - 6 || scrollTop < 40) toolbarVisible.value = true;
+  lastScrollTop = scrollTop;
 
-  window.clearTimeout(saveTimer)
-  saveTimer = window.setTimeout(() => void saveProgress(), 600)
+  window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => void saveProgress(), 600);
 }
 
 async function saveProgress(): Promise<void> {
-  const el = scrollEl.value
-  const current = chapter.value
-  if (!el || !current) return
-  const max = el.scrollHeight - el.clientHeight
-  const scrollPct = max > 0 ? Math.min(1, Math.max(0, el.scrollTop / max)) : 0
+  const el = scrollEl.value;
+  const current = chapter.value;
+  if (!el || !current) return;
+  const max = el.scrollHeight - el.clientHeight;
+  const scrollPct = max > 0 ? Math.min(1, Math.max(0, el.scrollTop / max)) : 0;
   await putProgress({
     key: progressKey.value,
     chapterId: current.id,
@@ -174,65 +176,65 @@ async function saveProgress(): Promise<void> {
     chapterNo: chapterIndex.value >= 0 ? chapterIndex.value + 1 : undefined,
     chapterTotal: chapters.value.length || undefined,
     updatedAt: Date.now(),
-  })
-  syncStore.schedulePush()
+  });
+  syncStore.schedulePush();
 }
 
 function goToChapter(target: ChapterRef | undefined): void {
-  if (!target) return
+  if (!target) return;
   void router.push({
-    name: 'reader',
+    name: "reader",
     params: { libId: libId.value, storyId: storyId.value, chapterId: target.id },
-  })
+  });
 }
 
 function jumpToChapter(id: string): void {
-  goToChapter(chapters.value.find((item) => item.id === id))
+  goToChapter(chapters.value.find((item) => item.id === id));
 }
 
 function backToChapters(): void {
-  void saveProgress()
-  void router.push({ name: 'story', params: { libId: libId.value, storyId: storyId.value } })
+  void saveProgress();
+  void router.push({ name: "story", params: { libId: libId.value, storyId: storyId.value } });
 }
 
 /** Folder này thực ra là nhóm chapter → đánh dấu + về danh sách (quét lại) */
 async function markGroupAndBack(): Promise<void> {
-  const current = chapter.value
-  if (!current) return
-  await storiesStore.markAsGroup(current.id)
+  const current = chapter.value;
+  if (!current) return;
+  await storiesStore.markAsGroup(current.id);
   await router.replace({
-    name: 'story',
+    name: "story",
     params: { libId: libId.value, storyId: storyId.value },
-  })
+  });
 }
 
 function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'ArrowLeft') goToChapter(prevChapter.value)
-  else if (event.key === 'ArrowRight') goToChapter(nextChapter.value)
+  if (event.key === "ArrowLeft") goToChapter(prevChapter.value);
+  else if (event.key === "ArrowRight") goToChapter(nextChapter.value);
 }
 
 onMounted(() => {
-  void loadChapter(false)
-  window.addEventListener('keydown', onKeydown)
-})
+  void loadChapter(false);
+  window.addEventListener("keydown", onKeydown);
+});
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeydown)
-  window.clearTimeout(saveTimer)
-  void saveProgress()
-})
+  window.removeEventListener("keydown", onKeydown);
+  window.clearTimeout(saveTimer);
+  void saveProgress();
+});
 
 // Điều hướng next/prev trong cùng component → nạp chapter mới, cuộn lên đầu
 watch(chapterId, () => {
-  triedRescan = false
-  toolbarVisible.value = true
-  lastScrollTop = 0
-  chapterFiles.value = null
+  triedRescan = false;
+  toolbarVisible.value = true;
+  lastScrollTop = 0;
+  chapterFiles.value = null;
   void nextTick(() => {
-    if (scrollEl.value) scrollEl.value.scrollTop = 0
-  })
-  void loadChapter(false)
-})
+    if (scrollEl.value) scrollEl.value.scrollTop = 0;
+  });
+  void loadChapter(false);
+});
 </script>
 
 <template>
@@ -241,7 +243,7 @@ watch(chapterId, () => {
     <NConfigProvider :theme="darkTheme" class="reader-provider">
       <!-- Toolbar tự ẩn khi cuộn xuống -->
       <div class="reader-toolbar" :class="{ hidden: !toolbarVisible }">
-        <NButton quaternary size="medium" class="tb-btn" @click="backToChapters">
+        <NButton quaternary size="small" class="tb-btn" @click="backToChapters">
           <template #icon>
             <AppIcon name="arrow-left" :size="16" />
           </template>
@@ -255,10 +257,9 @@ watch(chapterId, () => {
           filterable
           size="small"
           class="tb-jump"
-          title="Chọn chapter (gõ số hoặc tên)"
+          title="Chọn chapter (gõ tên hoặc số)"
           @update:value="jumpToChapter"
         />
-        <NText strong class="tb-title">{{ chapter?.name ?? '...' }}</NText>
         <NSpin v-if="pdfLoading" :size="14" />
         <div class="tb-spacer" />
         <span v-if="hasPdfOption" class="tb-modes">
@@ -272,7 +273,7 @@ watch(chapterId, () => {
             <template #icon>
               <AppIcon name="image" :size="14" />
             </template>
-            Ảnh
+            <span class="tb-label">Ảnh</span>
           </NButton>
           <NButton
             size="small"
@@ -284,12 +285,12 @@ watch(chapterId, () => {
             <template #icon>
               <AppIcon name="file-text" :size="14" />
             </template>
-            PDF
+            <span class="tb-label">PDF</span>
           </NButton>
         </span>
         <NButton
           class="tb-btn"
-          size="medium"
+          size="small"
           secondary
           :disabled="!prevChapter"
           title="Chap trước (phím ←)"
@@ -302,7 +303,7 @@ watch(chapterId, () => {
         </NButton>
         <NButton
           class="tb-btn"
-          size="medium"
+          size="small"
           secondary
           :disabled="!nextChapter"
           title="Chap sau (phím →)"
@@ -436,16 +437,9 @@ watch(chapterId, () => {
 }
 
 .tb-jump {
-  flex-shrink: 0;
-  width: 120px;
-}
-
-.tb-title {
-  font-size: 14px;
+  flex: 1 1 180px;
+  max-width: 260px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .tb-spacer {
@@ -484,6 +478,17 @@ watch(chapterId, () => {
   /* Thu gọn nhãn nút — giữ icon, đủ to để bấm bằng ngón tay */
   .tb-label {
     display: none;
+  }
+
+  /* Icon-only: naive-ui chừa margin 6px giữa icon và label (đã ẩn ở trên)
+     ở cả 2 thứ tự icon-trước/in-sau-label — bỏ hết để icon về giữa nút */
+  .reader-toolbar :deep(.n-button .n-button__icon) {
+    margin: 0;
+  }
+
+  /* Select chiếm chỗ trống còn lại, co lại khi chật */
+  .tb-jump {
+    max-width: none;
   }
 
   .tb-modes {

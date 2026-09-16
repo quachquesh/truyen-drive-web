@@ -173,7 +173,9 @@ function markGroup(chapter: ChapterRef): void {
         {{ fromFolderId ? 'Thư mục' : 'Kho truyện' }}
       </NButton>
       <h2 class="story-title">{{ storyName }}</h2>
-      <NTag v-if="chapters.length" size="small" type="info">{{ chapters.length }} chap</NTag>
+      <NTag v-if="chapters.length" size="small" type="info" class="chap-count">{{
+        chapters.length
+      }} chap</NTag>
     </div>
 
     <NAlert
@@ -388,13 +390,22 @@ function markGroup(chapter: ChapterRef): void {
 
   .toolbar {
     gap: 8px;
+    flex-wrap: wrap;
   }
 
+  /* Title chiếm nguyên hàng riêng — không còn bị kẹp giữa nút back và tag chap */
   .story-title {
+    order: 3;
+    flex: 1 1 100%;
     white-space: normal;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+    line-height: 1.3;
+  }
+
+  .chap-count {
+    margin-left: auto;
   }
 
   .search-input {

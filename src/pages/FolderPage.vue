@@ -200,7 +200,7 @@ watch(folderId, () => {
       style="margin-top: 60px"
     />
 
-    <NGrid v-else cols="1 s:2 m:3 l:4 xl:5" responsive="screen" :x-gap="12" :y-gap="12">
+    <NGrid v-else cols="1 s:2 m:3 l:4" responsive="screen" :x-gap="12" :y-gap="12">
       <NGridItem v-for="child in filteredChildren" :key="child.id">
         <StoryCard
           :story="child"

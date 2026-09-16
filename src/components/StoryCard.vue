@@ -4,9 +4,10 @@ import { NButton, NCard, NSpin, NTag, NText, NTooltip } from 'naive-ui'
 
 import AppIcon from '@/components/AppIcon.vue'
 import { useStoriesStore } from '@/stores/stories'
+import type { ProgressRecord } from '@/lib/db'
 import type { StorySummary } from '@/lib/scanner'
 
-const props = defineProps<{ story: StorySummary }>()
+const props = defineProps<{ story: StorySummary; progress?: ProgressRecord }>()
 const storiesStore = useStoriesStore()
 
 const emit = defineEmits<{
@@ -15,6 +16,15 @@ const emit = defineEmits<{
 }>()
 
 const marked = computed(() => Boolean(storiesStore.marks[props.story.id]))
+
+/** "45/100" khi biết số thứ tự chapter, không thì hiện tên chapter */
+const progressText = computed(() => {
+  const record = props.progress
+  if (!record) return ''
+  return record.chapterNo && record.chapterTotal
+    ? `${record.chapterNo}/${record.chapterTotal}`
+    : record.chapterName
+})
 
 /** dd/MM/yyyy từ modifiedTime của Drive; rỗng nếu không có (cache cũ) hoặc lỗi parse */
 const modifiedText = computed(() => {
@@ -43,6 +53,16 @@ const modifiedText = computed(() => {
       <AppIcon name="calendar" :size="12" class="modified-icon" />
       {{ modifiedText }}
     </NText>
+
+    <!-- Tiến độ đọc gần nhất (đồng bộ qua các thiết bị) -->
+    <div
+      v-if="progress"
+      class="reading-progress"
+      :title="`Đang đọc: ${progress.chapterName}`"
+    >
+      <AppIcon name="bookmark" :size="13" />
+      <span>Đang đọc: <b>{{ progressText }}</b></span>
+    </div>
 
     <!-- Đã xác nhận là truyện: hiện số chap + mới nhất -->
     <div v-if="marked" class="story-meta">
@@ -130,6 +150,21 @@ const modifiedText = computed(() => {
   margin-top: 2px;
   font-size: 12px;
   white-space: nowrap;
+}
+
+.reading-progress {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--tdw-primary);
+  white-space: nowrap;
+}
+
+.reading-progress span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .story-meta {

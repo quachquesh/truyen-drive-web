@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NCard, NConfigProvider, NEmpty, NSpace, NSpin, NTag, NText } from 'naive-ui'
+import { NButton, NCard, NConfigProvider, NEmpty, NSelect, NSpace, NSpin, NText } from 'naive-ui'
 import { darkTheme } from 'naive-ui'
 
 import PdfReader from '@/components/PdfReader.vue'
@@ -49,6 +49,11 @@ const chapter = computed(() => chapters.value.find((item) => item.id === chapter
 const chapterIndex = computed(() => chapters.value.findIndex((item) => item.id === chapterId.value))
 const prevChapter = computed(() => chapters.value[chapterIndex.value - 1])
 const nextChapter = computed(() => chapters.value[chapterIndex.value + 1])
+
+/** Bộ chọn chapter nhanh trên toolbar — gõ số/tên là nhảy được xa (15/100 → 50) */
+const chapterOptions = computed(() =>
+  chapters.value.map((item, index) => ({ label: `${index + 1}. ${item.name}`, value: item.id })),
+)
 
 /** Kiểu đọc chapter có cả ảnh lẫn PDF trọn bộ — nhớ lựa chọn của user */
 const READER_MODE_KEY = 'tdw-reader-mode'
@@ -135,6 +140,8 @@ async function recordOpenChapter(): Promise<void> {
     chapterId: current.id,
     chapterName: current.name,
     scrollPct: 0,
+    chapterNo: chapterIndex.value >= 0 ? chapterIndex.value + 1 : undefined,
+    chapterTotal: chapters.value.length || undefined,
     updatedAt: Date.now(),
   })
   syncStore.schedulePush()
@@ -164,6 +171,8 @@ async function saveProgress(): Promise<void> {
     chapterId: current.id,
     chapterName: current.name,
     scrollPct,
+    chapterNo: chapterIndex.value >= 0 ? chapterIndex.value + 1 : undefined,
+    chapterTotal: chapters.value.length || undefined,
     updatedAt: Date.now(),
   })
   syncStore.schedulePush()
@@ -175,6 +184,10 @@ function goToChapter(target: ChapterRef | undefined): void {
     name: 'reader',
     params: { libId: libId.value, storyId: storyId.value, chapterId: target.id },
   })
+}
+
+function jumpToChapter(id: string): void {
+  goToChapter(chapters.value.find((item) => item.id === id))
 }
 
 function backToChapters(): void {
@@ -234,9 +247,17 @@ watch(chapterId, () => {
           </template>
           <span class="tb-label">Danh sách</span>
         </NButton>
-        <NTag v-if="chapterIndex >= 0" size="small" :bordered="false" class="tb-count">
-          {{ chapterIndex + 1 }}/{{ chapters.length }}
-        </NTag>
+        <NSelect
+          v-if="chapters.length"
+          :value="chapterId"
+          :options="chapterOptions"
+          :consistent-menu-width="false"
+          filterable
+          size="small"
+          class="tb-jump"
+          title="Chọn chapter (gõ số hoặc tên)"
+          @update:value="jumpToChapter"
+        />
         <NText strong class="tb-title">{{ chapter?.name ?? '...' }}</NText>
         <NSpin v-if="pdfLoading" :size="14" />
         <div class="tb-spacer" />
@@ -414,8 +435,9 @@ watch(chapterId, () => {
   flex-shrink: 0;
 }
 
-.tb-count {
+.tb-jump {
   flex-shrink: 0;
+  width: 120px;
 }
 
 .tb-title {

@@ -48,6 +48,9 @@ export interface SyncProgress {
   chapterName: string
   /** 0..1 vị trí cuộn trong chapter */
   scrollPct: number
+  /** 1-based — hiển thị "đang đọc 45/100" ngoài kho (máy cũ không có) */
+  chapterNo?: number
+  chapterTotal?: number
   updatedAt: number
 }
 
@@ -160,6 +163,8 @@ export async function snapshotLocal(active: {
           chapterId: record.chapterId,
           chapterName: record.chapterName,
           scrollPct: record.scrollPct,
+          chapterNo: record.chapterNo,
+          chapterTotal: record.chapterTotal,
           updatedAt: record.updatedAt,
         },
       ]
@@ -252,6 +257,8 @@ export interface ApplyResult {
   activeFolderId: string
   /** Có bản ghi local thực sự thay đổi (để store biết có cần refresh UI) */
   changed: boolean
+  /** Tiến độ đọc thay đổi (ghi mới / xóa vì wipe) — để store bump progressRev */
+  progressChanged: boolean
 }
 
 /** Ghi payload đã merge vào IndexedDB. KHÔNG đụng localStorage/timer — store lo phần đó. */
@@ -260,6 +267,7 @@ export async function applySync(payload: SyncPayload): Promise<ApplyResult> {
   const byFolder = new Map(localLibs.map((lib) => [lib.folderId, lib]))
   const folderToId = new Map(localLibs.map((lib) => [lib.folderId, lib.id]))
   let changed = false
+  let progressChanged = false
 
   // Kho bị xóa (tombstone/đã biến mất khỏi payload) → xóa local
   const keepFolders = new Set(payload.libraries.map((lib) => lib.folderId))
@@ -318,6 +326,7 @@ export async function applySync(payload: SyncPayload): Promise<ApplyResult> {
       if (record.updatedAt < payload.progressWipeAt) {
         await deleteProgress(record.key)
         changed = true
+        progressChanged = true
       }
     }
   }
@@ -332,11 +341,14 @@ export async function applySync(payload: SyncPayload): Promise<ApplyResult> {
         chapterId: item.chapterId,
         chapterName: item.chapterName,
         scrollPct: item.scrollPct,
+        chapterNo: item.chapterNo,
+        chapterTotal: item.chapterTotal,
         updatedAt: item.updatedAt,
       })
       changed = true
+      progressChanged = true
     }
   }
 
-  return { activeFolderId: payload.activeFolderId, changed }
+  return { activeFolderId: payload.activeFolderId, changed, progressChanged }
 }

@@ -24,6 +24,8 @@ const ENABLED_KEY = 'tdw-sync-enabled'
 const PUSH_DEBOUNCE_MS = 15_000
 /** Giới hạn tối thiểu giữa 2 lần push để không spam Drive khi đọc liên tục. */
 const PUSH_MIN_INTERVAL_MS = 60_000
+/** Tab hiện lại sau khoảng này mới pull — tránh spam Drive khi đảo tab liên tục. */
+const PULL_VISIBLE_MS = 30_000
 
 function readEnabled(): boolean {
   try {
@@ -33,13 +35,15 @@ function readEnabled(): boolean {
   }
 }
 
-/** Flush tiến độ khi tab bị ẩn — chỉ cần wire 1 lần cho cả app. */
+/** Flush tiến độ khi tab bị ẩn, pull khi tab hiện lại — chỉ cần wire 1 lần cho cả app. */
 let visibilityWired = false
 function ensureVisibilityWired(): void {
   if (visibilityWired || typeof document === 'undefined') return
   visibilityWired = true
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') useSyncStore().flushPush()
+    const store = useSyncStore()
+    if (document.visibilityState === 'hidden') store.flushPush()
+    else if (Date.now() - store.lastSyncAt > PULL_VISIBLE_MS) void store.syncNow()
   })
 }
 
@@ -59,6 +63,11 @@ export const useSyncStore = defineStore('sync', {
     lastPushAt: 0,
     syncing: false,
     pushTimer: undefined as number | undefined,
+    /**
+     * Tăng mỗi khi tiến độ đọc trong IndexedDB đổi do sync/wipe —
+     * các trang đang mở watch giá trị này để tự re-read không cần "Làm mới".
+     */
+    progressRev: 0,
   }),
 
   actions: {
@@ -95,6 +104,7 @@ export const useSyncStore = defineStore('sync', {
           await libraryStore.load()
           useStoriesStore().marksLoaded = false
         }
+        if (result.progressChanged) this.progressRev++
         const active = libraryStore.libraries.find((lib) => lib.folderId === result.activeFolderId)
         if (active && active.id !== libraryStore.activeId) libraryStore.setActive(active.id)
 
@@ -139,6 +149,7 @@ export const useSyncStore = defineStore('sync', {
     /** Ghi tombstone "đã xóa toàn bộ tiến trình" để các máy khác cũng xóa. */
     async noteProgressWipe(): Promise<void> {
       await putTombstone(WIPE_PROGRESS_KEY, Date.now())
+      this.progressRev++ // xóa local phản ánh ngay lên UI đang mở
       this.schedulePush()
     },
 

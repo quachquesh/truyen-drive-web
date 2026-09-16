@@ -15,14 +15,17 @@ import {
 
 import AppIcon from '@/components/AppIcon.vue'
 import StoryCard from '@/components/StoryCard.vue'
+import { getAllProgress, type ProgressRecord } from '@/lib/db'
 import { useLibraryStore } from '@/stores/library'
 import { useStoriesStore } from '@/stores/stories'
+import { useSyncStore } from '@/stores/sync'
 import { sortStories, type StorySortMode } from '@/lib/storySort'
 
 const route = useRoute()
 const router = useRouter()
 const libraryStore = useLibraryStore()
 const storiesStore = useStoriesStore()
+const syncStore = useSyncStore()
 
 const search = ref('')
 
@@ -64,6 +67,19 @@ const scanningAny = computed(() =>
 
 const libId = computed(() => (typeof route.params.libId === 'string' ? route.params.libId : ''))
 
+/** Tiến độ đọc của kho đang mở — storyId → record, cho card hiện "Đang đọc 45/100" */
+const progressByStory = ref<Record<string, ProgressRecord | undefined>>({})
+
+async function refreshProgress(): Promise<void> {
+  if (!libId.value) return
+  const prefix = `${libId.value}:`
+  const map: Record<string, ProgressRecord | undefined> = {}
+  for (const record of await getAllProgress()) {
+    if (record.key.startsWith(prefix)) map[record.key.slice(prefix.length)] = record
+  }
+  progressByStory.value = map
+}
+
 onMounted(async () => {
   await libraryStore.load()
 
@@ -78,6 +94,7 @@ onMounted(async () => {
   if (libId.value) {
     libraryStore.setActive(libId.value)
     void storiesStore.openLibrary(libId.value)
+    void refreshProgress()
   }
 })
 
@@ -86,8 +103,15 @@ watch(libId, (id) => {
   if (id && route.name === 'library') {
     libraryStore.setActive(id)
     void storiesStore.openLibrary(id)
+    void refreshProgress()
   }
 })
+
+// Sync đa thiết bị ghi tiến độ mới → card tự nhảy số, không cần bấm Làm mới
+watch(
+  () => syncStore.progressRev,
+  () => void refreshProgress(),
+)
 
 /** Card đã đánh dấu → vào chapter; chưa đánh dấu → xem nội dung để quyết định */
 function onCardClick(story: { id: string; name: string }): void {
@@ -189,6 +213,7 @@ async function markAndRead(story: { id: string; name: string }): Promise<void> {
         <NGridItem v-for="story in filteredStories" :key="story.id">
           <StoryCard
             :story="story"
+            :progress="progressByStory[story.id]"
             @click="onCardClick(story)"
             @open-folder="
               router.push({

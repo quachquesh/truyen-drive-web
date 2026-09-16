@@ -33,6 +33,10 @@ export interface ProgressRecord {
   chapterName: string
   /** 0..1 vị trí cuộn trong chapter */
   scrollPct: number
+  /** Số thứ tự chapter (1-based) trong danh sách sort tăng dần — hiển thị "đang đọc 45/100" */
+  chapterNo?: number
+  /** Tổng số chapter lúc ghi record — có thể lệch khi Drive thêm chapter mới */
+  chapterTotal?: number
   updatedAt: number
 }
 

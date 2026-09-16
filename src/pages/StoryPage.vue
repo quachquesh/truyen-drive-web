@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NAlert,
@@ -18,12 +18,14 @@ import { toErrorMessage } from '@/lib/driveApi'
 import { getCache, getProgress, type ProgressRecord } from '@/lib/db'
 import type { ChapterRef, StorySummary } from '@/lib/scanner'
 import { useStoriesStore } from '@/stores/stories'
+import { useSyncStore } from '@/stores/sync'
 
 const ITEM_HEIGHT = 48
 
 const route = useRoute()
 const router = useRouter()
 const storiesStore = useStoriesStore()
+const syncStore = useSyncStore()
 const dialog = useDialog()
 
 const libId = computed(() => (typeof route.params.libId === 'string' ? route.params.libId : ''))
@@ -44,7 +46,13 @@ const loading = ref(false)
 const error = ref('')
 const progress = ref<ProgressRecord | null>(null)
 const search = ref('')
-const newestFirst = ref(false)
+
+/** Thứ tự chapter (mới nhất trước) — nhớ lựa chọn của user */
+const SORT_KEY = 'tdw-chapter-sort'
+const newestFirst = ref(localStorage.getItem(SORT_KEY) === 'newest')
+watch(newestFirst, (value) => {
+  localStorage.setItem(SORT_KEY, value ? 'newest' : 'oldest')
+})
 
 async function resolveStoryName(): Promise<void> {
   let name = storiesStore.storyName(storyId.value)
@@ -61,7 +69,7 @@ async function load(force: boolean): Promise<void> {
   try {
     await resolveStoryName()
     chapters.value = await storiesStore.ensureChapters(libId.value, storyId.value, { force })
-    progress.value = (await getProgress(progressKey.value)) ?? null
+    await refreshProgress()
   } catch (e) {
     error.value = toErrorMessage(e)
   } finally {
@@ -69,13 +77,33 @@ async function load(force: boolean): Promise<void> {
   }
 }
 
+/** Đọc lại tiến độ — gọi cả khi sync đa thiết bị vừa ghi record mới */
+async function refreshProgress(): Promise<void> {
+  progress.value = (await getProgress(progressKey.value)) ?? null
+}
+
 onMounted(() => void load(false))
+
+// Sync ghi progress mới (đọc tiếp trên máy khác) → "Tiếp tục" tự nhảy theo, khỏi bấm Làm mới
+watch(
+  () => syncStore.progressRev,
+  () => void refreshProgress(),
+)
 
 const filteredChapters = computed(() => {
   const query = search.value.trim().toLowerCase()
   let list = chapters.value
   if (query) list = list.filter((chapter) => chapter.name.toLowerCase().includes(query))
   return newestFirst.value ? [...list].reverse() : list
+})
+
+/** Nhãn nút Tiếp tục: kèm "45/100" khi biết số thứ tự chapter */
+const continueText = computed(() => {
+  const record = progress.value
+  if (!record) return ''
+  return record.chapterNo && record.chapterTotal
+    ? `${record.chapterName} (${record.chapterNo}/${record.chapterTotal})`
+    : record.chapterName
 })
 
 function openChapter(chapter: ChapterRef): void {
@@ -174,7 +202,7 @@ function markGroup(chapter: ChapterRef): void {
         <template #icon>
           <AppIcon name="play" :size="14" />
         </template>
-        Tiếp tục: {{ progress.chapterName }}
+        Tiếp tục: {{ continueText }}
       </NButton>
       <NButton
         size="small"

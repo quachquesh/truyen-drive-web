@@ -284,6 +284,23 @@ describe('snapshotLocal', () => {
     expect(snap.libraries[0]?.updatedAt).toBe(777)
     expect(snap.activeFolderId).toBe('')
   })
+
+  it('giữ nguyên số thứ tự chapter (chapterNo/chapterTotal) khi đổi key sang folderId', async () => {
+    libraryStore.set('uuid-1', { id: 'uuid-1', name: 'Kho một', folderId: 'F1', createdAt: 100 })
+    progressStore.set('uuid-1:S1', {
+      key: 'uuid-1:S1',
+      chapterId: 'c45',
+      chapterName: 'Chapter 45',
+      scrollPct: 0.5,
+      chapterNo: 45,
+      chapterTotal: 100,
+      updatedAt: 1234,
+    })
+
+    const snap = await snapshotLocal({ id: 'uuid-1', updatedAt: 42 })
+
+    expect(snap.progress[0]).toMatchObject({ storyId: 'S1', chapterNo: 45, chapterTotal: 100 })
+  })
 })
 
 describe('applySync', () => {
@@ -328,7 +345,7 @@ describe('applySync', () => {
   it('progress: record mới hơn ghi đè, story chưa đọc được thêm, kho chưa có bị bỏ qua', async () => {
     seedLocal()
 
-    await applySync(
+    const result = await applySync(
       payload({
         libraries: [lib('F1', 'Kho một', 100)],
         progress: [
@@ -339,16 +356,35 @@ describe('applySync', () => {
       }),
     )
 
+    expect(result.progressChanged).toBe(true)
     expect(progressStore.get('uuid-1:S1')).toMatchObject({ chapterId: 'c15', updatedAt: 2000 })
     expect(progressStore.get('uuid-1:S2')).toMatchObject({ updatedAt: 500 })
     expect(progressStore.size).toBe(2)
   })
 
+  it('progress mới hơn → ghi kèm số thứ tự chapter cho card hiện "đang đọc 45/100"', async () => {
+    seedLocal()
+
+    await applySync(
+      payload({
+        libraries: [lib('F1', 'Kho một', 100)],
+        progress: [{ ...progress('F1', 'S1', 2000, 'c45'), chapterNo: 45, chapterTotal: 100 }],
+      }),
+    )
+
+    expect(progressStore.get('uuid-1:S1')).toMatchObject({
+      chapterId: 'c45',
+      chapterNo: 45,
+      chapterTotal: 100,
+    })
+  })
+
   it('progressWipeAt xóa record local cũ hơn wipe', async () => {
     seedLocal()
 
-    await applySync(payload({ libraries: [lib('F1', 'Kho một', 100)], progressWipeAt: 1500 }))
+    const result = await applySync(payload({ libraries: [lib('F1', 'Kho một', 100)], progressWipeAt: 1500 }))
 
+    expect(result.progressChanged).toBe(true)
     expect(progressStore.size).toBe(0)
   })
 
@@ -381,6 +417,7 @@ describe('applySync', () => {
     )
 
     expect(result.changed).toBe(false)
+    expect(result.progressChanged).toBe(false)
     expect(clearChaptersCache).not.toHaveBeenCalled()
   })
 })

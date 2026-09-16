@@ -6,18 +6,18 @@ import {
   NButton,
   NEmpty,
   NInput,
-  NSpace,
   NSwitch,
   NTag,
   NText,
   NVirtualList,
+  useDialog,
 } from 'naive-ui'
 
+import AppIcon from '@/components/AppIcon.vue'
 import { toErrorMessage } from '@/lib/driveApi'
 import { getCache, getProgress, type ProgressRecord } from '@/lib/db'
 import type { ChapterRef, StorySummary } from '@/lib/scanner'
 import { useStoriesStore } from '@/stores/stories'
-import { useDialog } from 'naive-ui'
 
 const ITEM_HEIGHT = 48
 
@@ -109,7 +109,7 @@ function backToPrev(): void {
 function unmark(): void {
   dialog.warning({
     title: 'Bỏ đánh dấu truyện?',
-    content: 'Folder này sẽ trở lại "Chưa phân loại" (cache chapter vẫn giữ để dùng lại sau).',
+    content: 'Thư mục này sẽ trở lại trạng thái "Chưa phân loại". Danh sách chapter đã quét vẫn được giữ lại.',
     positiveText: 'Bỏ đánh dấu',
     negativeText: 'Để lại',
     onPositiveClick: async () => {
@@ -138,9 +138,12 @@ function markGroup(chapter: ChapterRef): void {
 <template>
   <div class="story-page">
     <div class="toolbar">
-      <NButton quaternary size="small" @click="backToPrev"
-        >← {{ fromFolderId ? 'Thư mục' : 'Kho truyện' }}</NButton
-      >
+      <NButton secondary @click="backToPrev">
+        <template #icon>
+          <AppIcon name="arrow-left" :size="16" />
+        </template>
+        {{ fromFolderId ? 'Thư mục' : 'Kho truyện' }}
+      </NButton>
       <h2 class="story-title">{{ storyName }}</h2>
       <NTag v-if="chapters.length" size="small" type="info">{{ chapters.length }} chap</NTag>
     </div>
@@ -156,19 +159,22 @@ function markGroup(chapter: ChapterRef): void {
       <NButton size="small" style="margin-top: 8px" @click="load(true)">Thử lại</NButton>
     </NAlert>
 
-    <NSpace v-if="!error" align="center" size="small" style="margin-bottom: 12px">
-      <NInput
-        v-model:value="search"
-        placeholder="Tìm chapter..."
-        clearable
-        size="small"
-        style="width: 220px"
-      />
-      <NText depth="3" style="font-size: 13px">Mới nhất trước</NText>
-      <NSwitch v-model:value="newestFirst" size="small" />
-      <div style="flex: 1" />
+    <div v-if="!error" class="actions">
+      <NInput v-model:value="search" placeholder="Tìm chapter..." clearable class="search-input">
+        <template #prefix>
+          <AppIcon name="search" :size="16" />
+        </template>
+      </NInput>
+      <label class="sort-toggle">
+        <NText depth="3" style="font-size: 13px">Mới nhất trước</NText>
+        <NSwitch v-model:value="newestFirst" size="small" />
+      </label>
+      <div class="spacer" />
       <NButton v-if="progress" size="small" type="primary" secondary @click="continueReading">
-        ▶ Tiếp tục: {{ progress.chapterName }}
+        <template #icon>
+          <AppIcon name="play" :size="14" />
+        </template>
+        Tiếp tục: {{ progress.chapterName }}
       </NButton>
       <NButton
         size="small"
@@ -177,18 +183,21 @@ function markGroup(chapter: ChapterRef): void {
         title="Quét lại chapter từ Drive"
         @click="load(true)"
       >
-        ↻ Làm mới
+        <template #icon>
+          <AppIcon name="refresh" :size="14" />
+        </template>
+        Làm mới
       </NButton>
       <NButton
         v-if="storiesStore.marks[storyId]"
         size="small"
         quaternary
-        title="Folder này không phải truyện — bỏ đánh dấu"
+        title="Thư mục này không phải truyện — bỏ đánh dấu"
         @click="unmark"
       >
         Đây không phải truyện?
       </NButton>
-    </NSpace>
+    </div>
 
     <div v-if="loading && !chapters.length" class="center-msg">
       <NText depth="3">Đang quét chapter...</NText>
@@ -202,9 +211,9 @@ function markGroup(chapter: ChapterRef): void {
 
     <NVirtualList
       v-else
+      class="chapter-list"
       :items="filteredChapters"
       :item-size="ITEM_HEIGHT"
-      style="max-height: calc(100vh - 210px)"
       :item-resizable="false"
     >
       <template #default="{ item }">
@@ -212,10 +221,13 @@ function markGroup(chapter: ChapterRef): void {
           :key="item.id"
           class="chapter-row"
           :class="{ current: item.id === progress?.chapterId }"
+          role="link"
+          :tabindex="0"
           @click="openChapter(item)"
+          @keydown.enter="openChapter(item)"
         >
           <span class="chapter-name">{{ item.name }}</span>
-          <NSpace size="small" align="center">
+          <span class="chapter-side">
             <NTag v-if="item.id === progress?.chapterId" size="tiny" type="success">Đang đọc</NTag>
             <NButton
               text
@@ -224,9 +236,12 @@ function markGroup(chapter: ChapterRef): void {
               title="Đây là NHÓM chapter (kiểu 0-80) — đưa chapter con lên cùng cấp"
               @click.stop="markGroup(item)"
             >
-              ⤴ Nhóm
+              <template #icon>
+                <AppIcon name="corner-up-left" :size="13" />
+              </template>
+              Nhóm
             </NButton>
-          </NSpace>
+          </span>
         </div>
       </template>
     </NVirtualList>
@@ -255,10 +270,38 @@ function markGroup(chapter: ChapterRef): void {
   white-space: nowrap;
 }
 
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.search-input {
+  width: min(220px, 100%);
+}
+
+.sort-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
 .center-msg {
   display: flex;
   justify-content: center;
   margin-top: 60px;
+}
+
+.chapter-list {
+  max-height: calc(100vh - 220px);
+  max-height: calc(100dvh - 220px);
 }
 
 .chapter-row {
@@ -268,16 +311,23 @@ function markGroup(chapter: ChapterRef): void {
   justify-content: space-between;
   gap: 12px;
   padding: 0 14px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.14);
+  border-bottom: 1px solid var(--tdw-border);
   cursor: pointer;
 }
 
 .chapter-row:hover {
-  background: rgba(128, 128, 128, 0.08);
+  background: var(--tdw-hover);
 }
 
+.chapter-row:focus-visible {
+  outline: 2px solid var(--tdw-primary);
+  outline-offset: -2px;
+}
+
+/* Ribbon bookmark đánh dấu chapter đang đọc */
 .chapter-row.current {
-  background: rgba(24, 160, 88, 0.1);
+  background: var(--tdw-primary-soft);
+  box-shadow: inset 3px 0 0 var(--tdw-primary);
 }
 
 .chapter-name {
@@ -287,16 +337,45 @@ function markGroup(chapter: ChapterRef): void {
   white-space: nowrap;
 }
 
-.chapter-count {
-  font-size: 12px;
-  white-space: nowrap;
+.chapter-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
+/* Luôn hiển thị — không phụ thuộc hover (touch không có hover) */
 .group-btn {
-  opacity: 0;
+  opacity: 0.55;
 }
 
-.chapter-row:hover .group-btn {
-  opacity: 0.75;
+.group-btn:hover {
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .story-page {
+    padding: 12px;
+  }
+
+  .toolbar {
+    gap: 8px;
+  }
+
+  .story-title {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .search-input {
+    flex: 1 1 100%;
+    order: -1;
+  }
+
+  .actions {
+    gap: 8px;
+  }
 }
 </style>

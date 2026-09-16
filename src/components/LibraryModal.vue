@@ -6,7 +6,6 @@ import {
   NButton,
   NForm,
   NFormItem,
-  NIcon,
   NInput,
   NList,
   NListItem,
@@ -17,9 +16,10 @@ import {
   useMessage,
 } from 'naive-ui'
 
+import AppIcon from '@/components/AppIcon.vue'
+import DriveFolderPicker from '@/components/DriveFolderPicker.vue'
 import { useLibraryStore } from '@/stores/library'
 import { toErrorMessage } from '@/lib/driveApi'
-import DriveFolderPicker from '@/components/DriveFolderPicker.vue'
 
 const router = useRouter()
 const message = useMessage()
@@ -105,7 +105,7 @@ function removeLibrary(id: string, name: string): void {
     :show="libraryStore.managerVisible"
     preset="card"
     title="Quản lý kho truyện"
-    style="max-width: 560px"
+    style="width: min(560px, 94vw)"
     @update:show="(v: boolean) => (v ? libraryStore.openManager() : libraryStore.closeManager())"
   >
     <NSpace vertical size="large">
@@ -117,11 +117,14 @@ function removeLibrary(id: string, name: string): void {
         <NButton
           v-if="!showManual"
           text
-          size="tiny"
+          size="small"
           style="margin-top: 8px"
           @click="showManual = true"
         >
-          Dán URL / ID thủ công?
+          <template #icon>
+            <AppIcon name="link" :size="14" />
+          </template>
+          Không thấy folder? Dán link Drive thủ công
         </NButton>
 
         <template v-else>
@@ -129,7 +132,7 @@ function removeLibrary(id: string, name: string): void {
             <NFormItem label="Tên kho (tuỳ chọn)">
               <NInput v-model:value="newName" placeholder="VD: Kho chính" />
             </NFormItem>
-            <NFormItem label="URL hoặc ID folder Google Drive">
+            <NFormItem label="Link (URL) folder Google Drive">
               <NInput
                 v-model:value="newFolder"
                 placeholder="https://drive.google.com/drive/folders/..."
@@ -144,8 +147,11 @@ function removeLibrary(id: string, name: string): void {
               >Thêm kho</NButton
             >
           </NForm>
-          <NButton text size="tiny" style="margin-top: 20px" @click="showManual = false">
-            ← Chọn trực tiếp từ Drive
+          <NButton text size="small" style="margin-top: 20px" @click="showManual = false">
+            <template #icon>
+              <AppIcon name="arrow-left" :size="14" />
+            </template>
+            Chọn trực tiếp từ Drive
           </NButton>
         </template>
 
@@ -174,27 +180,31 @@ function removeLibrary(id: string, name: string): void {
                   @blur="commitRename(lib.id)"
                 />
               </template>
-              <div v-else class="lib-info" @dblclick="startRename(lib.id, lib.name)">
+              <div v-else class="lib-info">
                 <span class="lib-name">{{ lib.name }}</span>
                 <NText depth="3" class="lib-folder" :title="lib.folderId">
                   {{ lib.folderId }}
                 </NText>
               </div>
-              <NSpace size="small">
-                <NButton size="tiny" quaternary @click="startRename(lib.id, lib.name)">
-                  <template #icon><NIcon>✏️</NIcon></template>
+              <span class="lib-actions">
+                <NButton size="small" quaternary @click="startRename(lib.id, lib.name)">
+                  <template #icon>
+                    <AppIcon name="pencil" :size="14" />
+                  </template>
                   Đổi tên
                 </NButton>
                 <NButton
-                  size="tiny"
+                  size="small"
                   quaternary
                   type="error"
                   @click="removeLibrary(lib.id, lib.name)"
                 >
-                  <template #icon><NIcon>🗑</NIcon></template>
+                  <template #icon>
+                    <AppIcon name="trash" :size="14" />
+                  </template>
                   Xóa
                 </NButton>
-              </NSpace>
+              </span>
             </div>
           </NListItem>
         </NList>
@@ -228,5 +238,17 @@ function removeLibrary(id: string, name: string): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.lib-actions {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .lib-folder {
+    max-width: 140px;
+  }
 }
 </style>

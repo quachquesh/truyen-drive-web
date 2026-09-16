@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { NButton, NCard, NSpin, NTag, NText, NTooltip } from 'naive-ui'
 
+import AppIcon from '@/components/AppIcon.vue'
 import { useStoriesStore } from '@/stores/stories'
 import type { StorySummary } from '@/lib/scanner'
 
@@ -39,7 +40,8 @@ const modifiedText = computed(() => {
       class="modified"
       title="Ngày sửa đổi trên Drive"
     >
-      🗓 {{ modifiedText }}
+      <AppIcon name="calendar" :size="12" class="modified-icon" />
+      {{ modifiedText }}
     </NText>
 
     <!-- Đã xác nhận là truyện: hiện số chap + mới nhất -->
@@ -68,27 +70,37 @@ const modifiedText = computed(() => {
       <div class="spacer" />
       <NButton
         text
-        size="tiny"
+        size="small"
         class="folder-btn"
         title="Xem nội dung thư mục"
         @click.stop="emit('openFolder', story)"
       >
-        📂
+        <template #icon>
+          <AppIcon name="folder" :size="15" />
+        </template>
       </NButton>
     </div>
 
     <!-- Chưa phân loại: user xem nội dung để quyết định -->
     <div v-else class="story-meta">
-      <NTag size="small" :bordered="false" type="warning">Chưa phân loại</NTag>
+      <NTooltip>
+        <template #trigger>
+          <NTag size="small" :bordered="false" type="warning">Chưa phân loại</NTag>
+        </template>
+        Bấm vào thẻ để xem bên trong, rồi chọn đây là một bộ truyện hay một danh sách truyện.
+      </NTooltip>
       <div class="spacer" />
       <NButton
         text
-        size="tiny"
+        size="small"
         class="mark-btn"
         title="Đây là truyện — đọc ngay"
         @click.stop="emit('markStory', story)"
       >
-        📖 Đọc truyện
+        <template #icon>
+          <AppIcon name="book-open" :size="15" />
+        </template>
+        Đọc truyện
       </NButton>
     </div>
   </NCard>
@@ -112,7 +124,9 @@ const modifiedText = computed(() => {
 }
 
 .modified {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin-top: 2px;
   font-size: 12px;
   white-space: nowrap;
@@ -143,13 +157,14 @@ const modifiedText = computed(() => {
   max-width: 50%;
 }
 
+/* Luôn hiển thị rõ — touch không có hover */
 .folder-btn,
 .mark-btn {
-  opacity: 0.55;
+  opacity: 0.7;
 }
 
-.story-card:hover .folder-btn,
-.story-card:hover .mark-btn {
+.folder-btn:hover,
+.mark-btn:hover {
   opacity: 1;
 }
 </style>

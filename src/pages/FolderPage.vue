@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NButton, NEmpty, NGrid, NGridItem, NInput, NSpace, NSpin, NText } from 'naive-ui'
+import { NAlert, NButton, NEmpty, NGrid, NGridItem, NInput, NSpin, NText } from 'naive-ui'
 
+import AppIcon from '@/components/AppIcon.vue'
 import StoryCard from '@/components/StoryCard.vue'
 import { getFileMeta, listChildrenGrouped, toErrorMessage } from '@/lib/driveApi'
 import { naturalSort } from '@/lib/naturalSort'
@@ -75,6 +76,11 @@ async function markCurrentAsStory(): Promise<void> {
   void router.push({ name: 'story', params: { libId: libId.value, storyId: folderId.value } })
 }
 
+/** User xác nhận folder hiện tại chỉ là danh sách chứa nhiều truyện */
+async function markCurrentAsGroup(): Promise<void> {
+  await storiesStore.markAsGroup(folderId.value)
+}
+
 /** Card đã đánh dấu → vào chapter; chưa đánh dấu → xem sâu hơn để quyết định */
 function onCardClick(child: StorySummary): void {
   if (storiesStore.marks[child.id]) {
@@ -115,55 +121,63 @@ watch(folderId, () => {
 <template>
   <div class="folder-page">
     <div class="toolbar">
-      <NSpace align="center" size="small">
-        <NButton
-          quaternary
-          size="small"
-          :disabled="!libId"
-          @click="router.push({ name: 'library', params: { libId } })"
-        >
-          ← Kho
-        </NButton>
-        <NText strong class="folder-title">{{ folderName || 'Thư mục' }}</NText>
-      </NSpace>
-      <NSpace size="small">
-        <NInput
-          v-model:value="search"
-          placeholder="Tìm..."
-          clearable
-          size="small"
-          style="width: 200px"
-        />
-        <NButton size="small" secondary :loading="loading" @click="load()">↻ Làm mới</NButton>
-      </NSpace>
+      <NButton
+        secondary
+        :disabled="!libId"
+        @click="router.push({ name: 'library', params: { libId } })"
+      >
+        <template #icon>
+          <AppIcon name="arrow-left" :size="16" />
+        </template>
+        Kho truyện
+      </NButton>
+      <NText strong class="folder-title">{{ folderName || 'Thư mục' }}</NText>
+      <div class="spacer" />
+      <NInput v-model:value="search" placeholder="Tìm..." clearable class="search-input">
+        <template #prefix>
+          <AppIcon name="search" :size="16" />
+        </template>
+      </NInput>
+      <NButton secondary :loading="loading" @click="load()">
+        <template #icon>
+          <AppIcon name="refresh" :size="16" />
+        </template>
+        Làm mới
+      </NButton>
     </div>
 
     <!-- Quyết định của user: folder này là truyện hay list truyện -->
-    <NAlert
-      v-if="!marked && !groupMarked"
-      type="info"
-      :bordered="false"
-      style="margin-bottom: 14px"
-    >
-      <NSpace align="center" size="small">
-        <span> Thư mục này là <strong>truyện</strong> hay <strong>danh sách truyện</strong>? </span>
-        <NButton size="small" type="primary" secondary @click="markCurrentAsStory">
-          📖 Đây là truyện — đọc ngay
+    <div v-if="!marked && !groupMarked" class="classify-banner">
+      <div class="classify-title">
+        Thư mục này là <strong>một bộ truyện</strong> hay <strong>một danh sách truyện</strong>?
+      </div>
+      <div class="classify-actions">
+        <NButton type="primary" @click="markCurrentAsStory">
+          <template #icon>
+            <AppIcon name="book-open" :size="16" />
+          </template>
+          Đây là một bộ truyện — đọc ngay
         </NButton>
-        <NText depth="3" style="font-size: 12px"
-          >(là danh sách thì bấm vào từng truyện bên dưới)</NText
-        >
-      </NSpace>
-    </NAlert>
+        <NButton secondary @click="markCurrentAsGroup">
+          <template #icon>
+            <AppIcon name="layers" :size="16" />
+          </template>
+          Đây là danh sách nhiều truyện
+        </NButton>
+      </div>
+      <NText depth="3" class="classify-hint">
+        Chưa chắc? Bấm vào từng thư mục bên dưới để xem bên trong có gì.
+      </NText>
+    </div>
 
     <NAlert v-else-if="groupMarked" type="success" :bordered="false" style="margin-bottom: 14px">
-      <NSpace align="center" size="small">
+      <div class="group-marked-row">
         <span>
-          Đã đánh dấu là <strong>nhóm chapter</strong> — chapter bên trong sẽ hiện cùng cấp trong
+          Đã ghi nhớ đây là <strong>nhóm chapter</strong> — chapter bên trong sẽ hiện luôn trong
           truyện chứa nó.
         </span>
-        <NButton size="tiny" secondary @click="unmarkGroup">Bỏ đánh dấu</NButton>
-      </NSpace>
+        <NButton size="small" secondary @click="unmarkGroup">Bỏ đánh dấu</NButton>
+      </div>
     </NAlert>
 
     <NAlert
@@ -215,7 +229,6 @@ watch(folderId, () => {
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
   flex-wrap: wrap;
@@ -229,11 +242,76 @@ watch(folderId, () => {
   max-width: 50vw;
 }
 
+.spacer {
+  flex: 1;
+}
+
+.search-input {
+  width: min(220px, 100%);
+}
+
+.classify-banner {
+  background: var(--tdw-primary-soft);
+  border: 1px solid rgba(24, 160, 88, 0.35);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.classify-title {
+  margin-bottom: 12px;
+}
+
+.classify-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.classify-hint {
+  font-size: 12px;
+  margin-top: 10px;
+  display: block;
+}
+
+.group-marked-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .center-msg {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
   margin-top: 60px;
+}
+
+@media (max-width: 640px) {
+  .folder-page {
+    padding: 12px;
+  }
+
+  .toolbar {
+    gap: 8px;
+  }
+
+  .folder-title {
+    max-width: 100%;
+    order: -1;
+    flex-basis: 100%;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .search-input {
+    flex: 1;
+    width: auto;
+  }
 }
 </style>

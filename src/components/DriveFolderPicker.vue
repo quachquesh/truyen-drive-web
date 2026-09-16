@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { NAlert, NButton, NEmpty, NInput, NSpace, NSpin, NText } from 'naive-ui'
 
+import AppIcon from '@/components/AppIcon.vue'
 import { listChildren, listSharedFolders, searchFolders, toErrorMessage } from '@/lib/driveApi'
 import { naturalSort } from '@/lib/naturalSort'
 import { FOLDER_MIME } from '@/lib/scanner'
@@ -16,14 +17,14 @@ const emit = defineEmits<{ select: [folder: PickerFolder] }>()
 /** 2 gốc duyệt: Drive của mình / folder được chia sẻ (kho viewer thường nằm đây) */
 type RootKind = 'home' | 'shared'
 
-const ROOTS: Array<{ kind: RootKind; label: string }> = [
-  { kind: 'home', label: '☁️ My Drive' },
-  { kind: 'shared', label: '👥 Đã chia sẻ với tôi' },
+const ROOTS: Array<{ kind: RootKind; label: string; icon: string }> = [
+  { kind: 'home', label: 'My Drive', icon: 'cloud' },
+  { kind: 'shared', label: 'Đã chia sẻ với tôi', icon: 'users' },
 ]
 
 const ROOT_LABELS: Record<RootKind, string> = {
-  home: '☁️ My Drive',
-  shared: '👥 Đã chia sẻ với tôi',
+  home: 'My Drive',
+  shared: 'Đã chia sẻ với tôi',
 }
 
 const rootKind = ref<RootKind>('shared')
@@ -171,15 +172,27 @@ onMounted(() => {
     <div class="picker-bar">
       <NButton
         quaternary
-        size="small"
+        size="medium"
         :disabled="path.length === 0 && !searchingActive"
+        title="Quay lại"
         @click="goBack"
       >
-        ←
+        <template #icon>
+          <AppIcon name="arrow-left" :size="16" />
+        </template>
       </NButton>
       <NText strong class="picker-title" :title="titleText">{{ titleText }}</NText>
-      <NButton size="small" type="primary" secondary :disabled="!canSelect" @click="confirmSelect">
-        ✓ Chọn folder này
+      <NButton
+        size="medium"
+        type="primary"
+        secondary
+        :disabled="!canSelect"
+        @click="confirmSelect"
+      >
+        <template #icon>
+          <AppIcon name="check" :size="15" />
+        </template>
+        Chọn folder này
       </NButton>
     </div>
 
@@ -192,6 +205,9 @@ onMounted(() => {
         secondary
         @click="switchRoot(root.kind)"
       >
+        <template #icon>
+          <AppIcon :name="root.icon" :size="14" />
+        </template>
         {{ root.label }}
       </NButton>
       <NInput
@@ -200,7 +216,11 @@ onMounted(() => {
         placeholder="Tìm folder theo tên..."
         clearable
         class="picker-search"
-      />
+      >
+        <template #prefix>
+          <AppIcon name="search" :size="14" />
+        </template>
+      </NInput>
     </div>
 
     <NAlert v-if="activeError" type="error" style="margin-bottom: 8px">
@@ -229,7 +249,10 @@ onMounted(() => {
             class="folder-row"
             @click="openFromSearch(folder)"
           >
-            📁 {{ folder.name }}
+            <template #icon>
+              <AppIcon name="folder" :size="16" />
+            </template>
+            {{ folder.name }}
           </NButton>
         </template>
       </template>
@@ -252,7 +275,10 @@ onMounted(() => {
             class="folder-row"
             @click="openFolder(folder)"
           >
-            📁 {{ folder.name }}
+            <template #icon>
+              <AppIcon name="folder" :size="16" />
+            </template>
+            {{ folder.name }}
           </NButton>
         </template>
       </template>
@@ -280,10 +306,12 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   margin: 8px 0 10px;
+  flex-wrap: wrap;
 }
 
 .picker-search {
   flex: 1;
+  min-width: 160px;
 }
 
 .picker-list {
@@ -308,5 +336,11 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .picker-list {
+    max-height: 50dvh;
+  }
 }
 </style>

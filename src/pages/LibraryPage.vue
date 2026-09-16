@@ -9,11 +9,11 @@ import {
   NGridItem,
   NInput,
   NSelect,
-  NSpace,
   NSpin,
   NText,
 } from 'naive-ui'
 
+import AppIcon from '@/components/AppIcon.vue'
 import StoryCard from '@/components/StoryCard.vue'
 import { useLibraryStore } from '@/stores/library'
 import { useStoriesStore } from '@/stores/stories'
@@ -113,9 +113,15 @@ async function markAndRead(story: { id: string; name: string }): Promise<void> {
   <div class="library-page">
     <template v-if="libraryStore.loaded && !libraryStore.libraries.length && !libId">
       <div class="empty-wrap">
-        <NEmpty description="Chưa có kho truyện nào">
+        <NEmpty description="Chưa có kho truyện nào — thêm một thư mục Google Drive để bắt đầu đọc">
+          <template #icon>
+            <AppIcon name="library" :size="36" class="empty-icon" />
+          </template>
           <template #extra>
-            <NButton type="primary" @click="libraryStore.openManager()">
+            <NButton type="primary" size="large" @click="libraryStore.openManager()">
+              <template #icon>
+                <AppIcon name="plus" :size="18" />
+              </template>
               Thêm kho Google Drive
             </NButton>
           </template>
@@ -125,34 +131,38 @@ async function markAndRead(story: { id: string; name: string }): Promise<void> {
 
     <template v-else-if="libId">
       <div class="toolbar">
-        <NSpace align="center" size="small" style="flex: 1">
-          <NInput
-            v-model:value="search"
-            placeholder="Tìm truyện..."
-            clearable
-            style="max-width: 320px"
-          />
-          <NSelect
-            v-model:value="sortMode"
-            :options="sortOptions"
-            size="small"
-            style="width: 150px"
-          />
-          <NSpin v-if="scanningAny" :size="16">
-            <NText depth="3" style="font-size: 12px">Đang quét số chap...</NText>
-          </NSpin>
-        </NSpace>
-        <NSpace size="small">
-          <NButton
-            secondary
-            :loading="storiesStore.listLoading"
-            title="Tải lại danh sách truyện từ Google Drive"
-            @click="storiesStore.openLibrary(libId, { force: true })"
-          >
-            ↻ Làm mới
-          </NButton>
-          <NButton secondary @click="libraryStore.openManager()">Quản lý kho</NButton>
-        </NSpace>
+        <NInput
+          v-model:value="search"
+          placeholder="Tìm truyện..."
+          clearable
+          class="search-input"
+        >
+          <template #prefix>
+            <AppIcon name="search" :size="16" />
+          </template>
+        </NInput>
+        <NSelect v-model:value="sortMode" :options="sortOptions" class="sort-select" />
+        <NSpin v-if="scanningAny" :size="16">
+          <NText depth="3" style="font-size: 12px">Đang quét số chap...</NText>
+        </NSpin>
+        <div class="spacer" />
+        <NButton
+          secondary
+          :loading="storiesStore.listLoading"
+          title="Tải lại danh sách truyện từ Google Drive"
+          @click="storiesStore.openLibrary(libId, { force: true })"
+        >
+          <template #icon>
+            <AppIcon name="refresh" :size="16" />
+          </template>
+          Làm mới
+        </NButton>
+        <NButton secondary @click="libraryStore.openManager()">
+          <template #icon>
+            <AppIcon name="library" :size="16" />
+          </template>
+          Quản lý kho
+        </NButton>
       </div>
 
       <NAlert
@@ -210,6 +220,25 @@ async function markAndRead(story: { id: string; name: string }): Promise<void> {
   flex-wrap: wrap;
 }
 
+.search-input {
+  width: min(320px, 100%);
+  flex: 1 1 200px;
+  max-width: 320px;
+}
+
+.sort-select {
+  width: 160px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.empty-icon {
+  opacity: 0.4;
+  margin-bottom: 8px;
+}
+
 .empty-wrap {
   display: flex;
   justify-content: center;
@@ -222,5 +251,25 @@ async function markAndRead(story: { id: string; name: string }): Promise<void> {
   align-items: center;
   gap: 12px;
   margin-top: 60px;
+}
+
+@media (max-width: 640px) {
+  .library-page {
+    padding: 12px;
+  }
+
+  .toolbar {
+    gap: 8px;
+  }
+
+  .search-input {
+    max-width: none;
+    flex-basis: 100%;
+    order: -1;
+  }
+
+  .sort-select {
+    flex: 1;
+  }
 }
 </style>

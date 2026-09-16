@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { NAvatar, NButton, NDropdown, NIcon, type DropdownOption } from 'naive-ui'
+import { NAvatar, NButton, NDropdown, type DropdownOption } from 'naive-ui'
 
+import AppIcon from '@/components/AppIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import LibraryModal from '@/components/LibraryModal.vue'
 
+defineProps<{ dark: boolean }>()
 const emit = defineEmits<{ toggleTheme: [] }>()
 
 const router = useRouter()
@@ -22,11 +24,21 @@ const libraryOptions = computed<DropdownOption[]>(() => {
   return [
     { key: 'label', label: 'Kho truyện', disabled: true },
     ...libs,
-    { key: 'manage', label: '⚙ Quản lý kho...' },
+    { key: 'manage', label: 'Quản lý kho truyện', icon: renderLibraryIcon() },
   ]
 })
 
-const userOptions: DropdownOption[] = [{ key: 'logout', label: 'Đăng xuất' }]
+const userOptions: DropdownOption[] = [
+  { key: 'logout', label: 'Đăng xuất', icon: renderLogoutIcon() },
+]
+
+function renderLibraryIcon() {
+  return () => h(AppIcon, { name: 'library', size: 16 })
+}
+
+function renderLogoutIcon() {
+  return () => h(AppIcon, { name: 'log-out', size: 16 })
+}
 
 function onLibrarySelect(key: string | number): void {
   if (key === 'manage') {
@@ -52,42 +64,42 @@ const activeName = computed(() => libraryStore.active?.name ?? 'Chọn kho')
 <template>
   <header class="app-header">
     <div class="app-header-inner">
-      <RouterLink :to="{ name: 'home' }" class="brand">
-        <span class="brand-icon">📚</span>
+      <RouterLink :to="{ name: 'home' }" class="brand" title="Truyện Drive">
+        <AppIcon name="book" :size="22" class="brand-icon" />
         <span class="brand-text">Truyện Drive</span>
       </RouterLink>
 
       <NDropdown trigger="click" :options="libraryOptions" @select="onLibrarySelect">
-        <NButton quaternary size="small">
-          {{ activeName }}
+        <NButton quaternary size="medium" class="lib-switch">
+          <span class="lib-name">{{ activeName }}</span>
           <template #icon>
-            <span class="dropdown-caret">▾</span>
+            <AppIcon name="chevron-down" :size="14" />
           </template>
         </NButton>
       </NDropdown>
 
       <div class="spacer" />
 
-      <NButton quaternary circle size="small" title="Sáng / tối" @click="emit('toggleTheme')">
+      <NButton quaternary circle size="medium" title="Sáng / tối" @click="emit('toggleTheme')">
         <template #icon>
-          <NIcon>🌙</NIcon>
+          <AppIcon :name="dark ? 'sun' : 'moon'" :size="18" />
         </template>
       </NButton>
 
       <NButton
         quaternary
         circle
-        size="small"
+        size="medium"
         title="Cài đặt"
         @click="router.push({ name: 'settings' })"
       >
         <template #icon>
-          <NIcon>⚙️</NIcon>
+          <AppIcon name="settings" :size="18" />
         </template>
       </NButton>
 
       <NDropdown trigger="click" :options="userOptions" @select="onUserSelect">
-        <NAvatar round size="small" :src="auth.user?.photoLink" style="cursor: pointer">
+        <NAvatar round size="medium" :src="auth.user?.photoLink" style="cursor: pointer">
           {{ auth.user ? auth.user.emailAddress.charAt(0).toUpperCase() : '?' }}
         </NAvatar>
       </NDropdown>
@@ -100,8 +112,9 @@ const activeName = computed(() => libraryStore.active?.name ?? 'Chọn kho')
 <style scoped>
 .app-header {
   flex-shrink: 0;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.18);
+  background: var(--tdw-header-bg);
   backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--tdw-border);
 }
 
 .app-header-inner {
@@ -116,18 +129,37 @@ const activeName = computed(() => libraryStore.active?.name ?? 'Chọn kho')
 .brand {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   text-decoration: none;
   font-weight: 700;
   font-size: 16px;
-  color: inherit;
+  color: var(--tdw-text);
+}
+
+.brand-icon {
+  color: var(--tdw-primary);
 }
 
 .spacer {
   flex: 1;
 }
 
-.dropdown-caret {
-  font-size: 10px;
+.lib-switch .lib-name {
+  max-width: 30vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+@media (max-width: 480px) {
+  .brand-text {
+    display: none;
+  }
+
+  .app-header-inner {
+    gap: 8px;
+    padding: 6px 12px;
+  }
 }
 </style>

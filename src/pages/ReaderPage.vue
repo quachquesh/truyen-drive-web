@@ -6,6 +6,7 @@ import { darkTheme } from 'naive-ui'
 
 import PdfReader from '@/components/PdfReader.vue'
 import ReaderImage from '@/components/ReaderImage.vue'
+import AppIcon from '@/components/AppIcon.vue'
 import { toErrorMessage } from '@/lib/driveApi'
 import { getProgress, putProgress } from '@/lib/db'
 import {
@@ -223,132 +224,159 @@ watch(chapterId, () => {
 
 <template>
   <div ref="scrollEl" class="reader-root" @scroll.passive="onScroll">
-    <!-- Toolbar tự ẩn khi cuộn xuống -->
-    <NConfigProvider :theme="darkTheme" class="toolbar-provider">
+    <!-- Bọc toàn bộ reader trong theme tối: component Naive trong reader luôn tối ở cả 2 chế độ -->
+    <NConfigProvider :theme="darkTheme" class="reader-provider">
+      <!-- Toolbar tự ẩn khi cuộn xuống -->
       <div class="reader-toolbar" :class="{ hidden: !toolbarVisible }">
-        <NSpace align="center" size="small">
-          <NButton quaternary size="small" @click="backToChapters">← Danh sách</NButton>
-          <NText strong style="font-size: 14px">{{ chapter?.name ?? '...' }}</NText>
-          <NTag v-if="chapterIndex >= 0" size="small" :bordered="false">
-            {{ chapterIndex + 1 }}/{{ chapters.length }}
-          </NTag>
-          <NSpin v-if="pdfLoading" :size="14" />
-          <NSpace v-if="hasPdfOption" size="small" :wrap="false">
-            <NButton
-              size="tiny"
-              secondary
-              :type="readerMode === 'images' ? 'primary' : 'default'"
-              title="Đọc từng ảnh (lazy-load nhanh)"
-              @click="readerMode = 'images'"
-            >
-              🖼 Ảnh
-            </NButton>
-            <NButton
-              size="tiny"
-              secondary
-              :type="readerMode === 'pdf' ? 'primary' : 'default'"
-              title="Đọc file PDF trọn bộ của chapter"
-              @click="readerMode = 'pdf'"
-            >
-              📄 PDF
-            </NButton>
-          </NSpace>
-        </NSpace>
-        <NSpace size="small">
+        <NButton quaternary size="medium" class="tb-btn" @click="backToChapters">
+          <template #icon>
+            <AppIcon name="arrow-left" :size="16" />
+          </template>
+          <span class="tb-label">Danh sách</span>
+        </NButton>
+        <NTag v-if="chapterIndex >= 0" size="small" :bordered="false" class="tb-count">
+          {{ chapterIndex + 1 }}/{{ chapters.length }}
+        </NTag>
+        <NText strong class="tb-title">{{ chapter?.name ?? '...' }}</NText>
+        <NSpin v-if="pdfLoading" :size="14" />
+        <div class="tb-spacer" />
+        <span v-if="hasPdfOption" class="tb-modes">
           <NButton
             size="small"
             secondary
-            :disabled="!prevChapter"
-            title="Chap trước (←)"
-            @click="goToChapter(prevChapter)"
+            :type="readerMode === 'images' ? 'primary' : 'default'"
+            title="Đọc từng ảnh (tải nhanh hơn)"
+            @click="readerMode = 'images'"
           >
-            ‹ Trước
+            <template #icon>
+              <AppIcon name="image" :size="14" />
+            </template>
+            Ảnh
           </NButton>
           <NButton
             size="small"
             secondary
-            :disabled="!nextChapter"
-            title="Chap sau (→)"
-            @click="goToChapter(nextChapter)"
+            :type="readerMode === 'pdf' ? 'primary' : 'default'"
+            title="Đọc file PDF trọn bộ của chapter"
+            @click="readerMode = 'pdf'"
           >
-            Sau ›
+            <template #icon>
+              <AppIcon name="file-text" :size="14" />
+            </template>
+            PDF
           </NButton>
-        </NSpace>
+        </span>
+        <NButton
+          class="tb-btn"
+          size="medium"
+          secondary
+          :disabled="!prevChapter"
+          title="Chap trước (phím ←)"
+          @click="goToChapter(prevChapter)"
+        >
+          <template #icon>
+            <AppIcon name="chevron-left" :size="16" />
+          </template>
+          <span class="tb-label">Trước</span>
+        </NButton>
+        <NButton
+          class="tb-btn"
+          size="medium"
+          secondary
+          :disabled="!nextChapter"
+          title="Chap sau (phím →)"
+          @click="goToChapter(nextChapter)"
+        >
+          <span class="tb-label">Sau</span>
+          <template #icon>
+            <AppIcon name="chevron-right" :size="16" />
+          </template>
+        </NButton>
       </div>
-    </NConfigProvider>
 
-    <div v-if="loading && !chapters.length" class="reader-msg">
-      <NSpin />
-      <NText depth="3">
-        Đang quét chapter...
-        <template v-if="storiesStore.counts[storyId]">
-          (tìm được {{ storiesStore.counts[storyId] }})
-        </template>
-      </NText>
-    </div>
+      <div v-if="loading && !chapters.length" class="reader-msg">
+        <NSpin />
+        <NText depth="3">
+          Đang quét chapter...
+          <template v-if="storiesStore.counts[storyId]">
+            (tìm được {{ storiesStore.counts[storyId] }})
+          </template>
+        </NText>
+      </div>
 
-    <div v-else-if="loadError" class="reader-msg">
-      <NEmpty :description="loadError">
-        <template #extra>
-          <NSpace>
-            <NButton size="small" @click="loadChapter(true)">Quét lại</NButton>
-            <NButton size="small" secondary @click="backToChapters">Về danh sách</NButton>
-          </NSpace>
-        </template>
-      </NEmpty>
-    </div>
+      <div v-else-if="loadError" class="reader-msg">
+        <NEmpty :description="loadError">
+          <template #extra>
+            <NSpace>
+              <NButton size="medium" @click="loadChapter(true)">Quét lại</NButton>
+              <NButton size="medium" secondary @click="backToChapters">Về danh sách</NButton>
+            </NSpace>
+          </template>
+        </NEmpty>
+      </div>
 
-    <div v-else-if="filesLoading || !chapterFiles" class="reader-msg">
-      <NSpin />
-      <NText depth="3">Đang tải chapter...</NText>
-    </div>
+      <div v-else-if="filesLoading || !chapterFiles" class="reader-msg">
+        <NSpin />
+        <NText depth="3">Đang tải chapter...</NText>
+      </div>
 
-    <div v-else-if="!chapterFiles.files.length" class="reader-msg">
-      <NEmpty description="Chapter trống (không có ảnh / PDF trong folder)">
-        <template #extra>
-          <NSpace>
-            <NButton size="small" type="primary" @click="markGroupAndBack">
-              ⤴ Đây là nhóm chapter — đưa con lên
-            </NButton>
-            <NButton size="small" @click="loadChapterFiles(true)">Thử lại</NButton>
-            <NButton size="small" secondary @click="backToChapters">Về danh sách</NButton>
-          </NSpace>
-        </template>
-      </NEmpty>
-    </div>
+      <div v-else-if="!chapterFiles.files.length" class="reader-msg">
+        <NEmpty description="Chapter trống (không có ảnh / PDF trong folder)">
+          <template #extra>
+            <NSpace vertical align="center">
+              <NButton size="medium" type="primary" @click="markGroupAndBack">
+                <template #icon>
+                  <AppIcon name="corner-up-left" :size="15" />
+                </template>
+                Đây là nhóm chapter — đưa con lên
+              </NButton>
+              <NSpace justify="center">
+                <NButton size="medium" @click="loadChapterFiles(true)">Thử lại</NButton>
+                <NButton size="medium" secondary @click="backToChapters">Về danh sách</NButton>
+              </NSpace>
+            </NSpace>
+          </template>
+        </NEmpty>
+      </div>
 
-    <template v-else>
-      <!-- Chapter dạng PDF (PDF-only hoặc user chọn PDF trong chapter ảnh+PDF) -->
-      <PdfReader
-        v-if="usePdf && pdfToRender"
-        :key="pdfToRender.id"
-        :file="pdfToRender"
-        :story-key="progressKey"
-        @loading="(v: boolean) => (pdfLoading = v)"
-      />
-
-      <!-- Chapter dạng ảnh, cuộn dọc liên tục -->
       <template v-else>
-        <ReaderImage
-          v-for="file in chapterFiles.files"
-          :key="file.id"
-          :file="file"
+        <!-- Chapter dạng PDF (PDF-only hoặc user chọn PDF trong chapter ảnh+PDF) -->
+        <PdfReader
+          v-if="usePdf && pdfToRender"
+          :key="pdfToRender.id"
+          :file="pdfToRender"
           :story-key="progressKey"
+          @loading="(v: boolean) => (pdfLoading = v)"
         />
-      </template>
 
-      <!-- Cuối chapter -->
-      <NCard class="end-card" :bordered="false">
-        <NSpace vertical align="center" size="small">
-          <NText depth="3">Hết {{ chapterFiles.name }}</NText>
-          <NButton v-if="nextChapter" type="primary" size="large" @click="goToChapter(nextChapter)">
-            Chap tiếp: {{ nextChapter.name }}
-          </NButton>
-          <NText v-else depth="3">Bạn đã đọc hết truyện 🎉</NText>
-          <NButton quaternary size="small" @click="backToChapters">Về danh sách chapter</NButton>
-        </NSpace>
-      </NCard>
-    </template>
+        <!-- Chapter dạng ảnh, cuộn dọc liên tục -->
+        <template v-else>
+          <ReaderImage
+            v-for="file in chapterFiles.files"
+            :key="file.id"
+            :file="file"
+            :story-key="progressKey"
+          />
+        </template>
+
+        <!-- Cuối chapter -->
+        <NCard class="end-card" :bordered="false">
+          <NSpace vertical align="center" size="small">
+            <NText depth="3">Hết {{ chapterFiles.name }}</NText>
+            <NButton
+              v-if="nextChapter"
+              type="primary"
+              size="large"
+              @click="goToChapter(nextChapter)"
+            >
+              Chap tiếp: {{ nextChapter.name }}
+            </NButton>
+            <NText v-else depth="3">Bạn đã đọc hết truyện</NText>
+            <NButton quaternary size="medium" @click="backToChapters">Về danh sách chapter</NButton>
+          </NSpace>
+        </NCard>
+      </template>
+    </NConfigProvider>
   </div>
 </template>
 
@@ -360,17 +388,17 @@ watch(chapterId, () => {
   background: rgba(0, 0, 0, 0.85);
 }
 
-.toolbar-provider {
-  position: sticky;
-  top: 0;
-  z-index: 10;
+.reader-provider {
+  min-height: 100%;
 }
 
 .reader-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   padding: 8px 12px;
   background: rgba(20, 20, 20, 0.92);
   backdrop-filter: blur(8px);
@@ -382,8 +410,35 @@ watch(chapterId, () => {
   transform: translateY(-100%);
 }
 
+.tb-btn {
+  flex-shrink: 0;
+}
+
+.tb-count {
+  flex-shrink: 0;
+}
+
+.tb-title {
+  font-size: 14px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tb-spacer {
+  flex: 1;
+}
+
+.tb-modes {
+  display: inline-flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .reader-msg {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -396,5 +451,21 @@ watch(chapterId, () => {
   max-width: 520px;
   margin: 32px auto;
   border-radius: 12px;
+}
+
+@media (max-width: 640px) {
+  .reader-toolbar {
+    gap: 6px;
+    padding: 6px 8px;
+  }
+
+  /* Thu gọn nhãn nút — giữ icon, đủ to để bấm bằng ngón tay */
+  .tb-label {
+    display: none;
+  }
+
+  .tb-modes {
+    gap: 4px;
+  }
 }
 </style>

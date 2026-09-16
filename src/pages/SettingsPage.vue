@@ -16,6 +16,7 @@ import {
   useMessage,
 } from 'naive-ui'
 
+import AppIcon from '@/components/AppIcon.vue'
 import {
   clearBlobs,
   clearListCache,
@@ -71,14 +72,14 @@ function confirmClear(title: string, action: () => Promise<void>): void {
 }
 
 function clearImages(): void {
-  confirmClear('Xóa toàn bộ cache ảnh/PDF?', async () => {
+  confirmClear('Xóa toàn bộ ảnh/PDF đã lưu trên thiết bị?', async () => {
     await clearBlobs()
   })
 }
 
 function clearLists(): void {
   confirmClear(
-    'Xóa cache danh sách (truyện/chapter)?\nLần tới sẽ quét lại từ Google Drive.',
+    'Xóa danh sách truyện/chapter đã lưu?\nLần tới mở, ứng dụng sẽ tải lại từ Google Drive.',
     async () => {
       await clearListCache()
     },
@@ -94,7 +95,7 @@ function clearReadingProgress(): void {
 }
 
 function clearEverything(): void {
-  confirmClear('Xóa TOÀN BỘ cache + tiến trình đọc?', async () => {
+  confirmClear('Xóa toàn bộ dữ liệu đã lưu + tiến trình đọc?', async () => {
     await clearAllCaches()
     await syncStore.noteProgressWipe()
   })
@@ -103,10 +104,11 @@ function clearEverything(): void {
 /** Đặt lại app từ đầu: xóa hẳn database + tải lại trang (không chỉ cache). */
 function resetApp(): void {
   dialog.error({
-    title: 'Xóa TOÀN BỘ IndexedDB?',
+    title: 'Đặt lại ứng dụng?',
     content:
-      'Đặt lại app từ đầu: xóa sạch kho truyện, tiến trình đọc, đánh dấu và mọi cache. ' +
-      'Trang sẽ tải lại ngay sau đó. Nếu đang bật đồng bộ, dữ liệu sẽ được tự kéo lại từ Google Drive.',
+      'Xóa sạch mọi dữ liệu ứng dụng lưu trên thiết bị: kho truyện, tiến trình đọc, đánh dấu và ' +
+      'ảnh/PDF đã lưu. Trang sẽ tải lại ngay sau đó. Nếu đang bật đồng bộ, dữ liệu sẽ được tự kéo lại ' +
+      'từ Google Drive.',
     positiveText: 'Xóa & tải lại',
     negativeText: 'Hủy',
     onPositiveClick: async () => {
@@ -134,7 +136,7 @@ const syncStatusText = computed(() => {
 function logout(): void {
   dialog.warning({
     title: 'Đăng xuất?',
-    content: 'Token sẽ bị thu hồi. Bạn cần đăng nhập lại để tiếp tục đọc.',
+    content: 'Bạn cần đăng nhập lại để tiếp tục đọc.',
     positiveText: 'Đăng xuất',
     negativeText: 'Ở lại',
     onPositiveClick: () => {
@@ -156,14 +158,18 @@ onMounted(() => {
 
     <NGrid :x-gap="16" :y-gap="16" cols="1 m:2" responsive="screen">
       <NGi>
-        <NCard title="Bộ nhớ đệm (IndexedDB)" size="small">
+        <NCard title="Dữ liệu lưu trên thiết bị" size="small">
           <NSpace vertical size="large">
             <div>
               <NSpace align="center" justify="space-between">
                 <NText
                   >Đã dùng: <strong>{{ formatBytes(usage) }}</strong></NText
                 >
-                <NButton size="tiny" quaternary @click="refreshUsage">↻</NButton>
+                <NButton size="tiny" quaternary title="Tính lại dung lượng" @click="refreshUsage">
+                  <template #icon>
+                    <AppIcon name="refresh" :size="14" />
+                  </template>
+                </NButton>
               </NSpace>
               <NProgress
                 type="line"
@@ -172,32 +178,32 @@ onMounted(() => {
                 style="margin-top: 8px"
               />
               <NText depth="3" style="font-size: 12px">
-                Tổng hạn mức trình duyệt cấp: {{ formatBytes(quota) }}
+                Dung lượng trình duyệt cho phép: {{ formatBytes(quota) }}
               </NText>
             </div>
 
             <NSpace size="small" style="flex-wrap: wrap">
               <NButton size="small" secondary type="warning" @click="clearImages"
-                >Xóa cache ảnh/PDF</NButton
+                >Xóa ảnh/PDF đã lưu</NButton
               >
               <NButton size="small" secondary type="warning" @click="clearLists"
-                >Xóa cache danh sách</NButton
+                >Xóa danh sách đã lưu</NButton
               >
               <NButton size="small" secondary @click="clearReadingProgress"
                 >Xóa tiến trình đọc</NButton
               >
               <NButton size="small" secondary type="error" @click="clearEverything"
-                >Xóa toàn bộ</NButton
+                >Xóa tất cả</NButton
               >
               <NButton size="small" secondary type="error" @click="resetApp"
-                >Xóa IndexedDB (đặt lại app)</NButton
+                >Đặt lại ứng dụng</NButton
               >
             </NSpace>
 
             <NAlert type="info" :bordered="false" style="font-size: 13px">
-              Ảnh/PDF từng đọc được lưu sẵn nên lần sau mở không tốn mạng. "Xóa cache danh sách"
-              buộc app quét lại kho từ Drive (dùng khi có truyện/chapter mới nhưng nút Làm mới chưa
-              đủ).
+              Ảnh/PDF từng đọc được lưu sẵn trên thiết bị nên lần sau mở không tốn mạng. "Xóa danh
+              sách đã lưu" buộc ứng dụng tải lại kho từ Drive — dùng khi có truyện/chapter mới nhưng
+              nút Làm mới chưa đủ.
             </NAlert>
           </NSpace>
         </NCard>
@@ -210,6 +216,9 @@ onMounted(() => {
               Đang có <strong>{{ libraryStore.libraries.length }}</strong> kho.
             </NText>
             <NButton secondary style="align-self: flex-start" @click="libraryStore.openManager()">
+              <template #icon>
+                <AppIcon name="library" :size="16" />
+              </template>
               Quản lý kho
             </NButton>
           </NSpace>
@@ -228,9 +237,9 @@ onMounted(() => {
               />
             </NSpace>
             <NText depth="3" style="font-size: 13px">
-              Tiến độ đọc, danh sách kho (kèm kho đang chọn) và đánh dấu story/nhóm được lưu vào thư
-              mục riêng của app trên Drive (appDataFolder — không hiện trong My Drive) và tự tải mỗi
-              khi mở trang. Cùng tài khoản Google = cùng dữ liệu.
+              Tiến độ đọc, danh sách kho (kèm kho đang chọn) và đánh dấu truyện/nhóm được lưu vào một
+              thư mục ẩn trên Drive của bạn — chỉ ứng dụng này thấy được, không hiện trong My Drive —
+              và tự tải mỗi khi mở trang. Cùng tài khoản Google = cùng dữ liệu trên mọi thiết bị.
             </NText>
             <NAlert
               v-if="syncStore.status === 'error'"
@@ -265,7 +274,8 @@ onMounted(() => {
               <NText depth="3">{{ auth.user.emailAddress }}</NText>
             </NText>
             <NAlert type="info" :bordered="false" style="font-size: 13px">
-              Token không lưu trên thiết bị — mỗi lần mở trang, app tự xin token mới từ Google.
+              Phiên đăng nhập không lưu trên thiết bị — mỗi lần mở trang, ứng dụng tự kết nối lại
+              với Google.
             </NAlert>
             <NButton secondary type="error" style="align-self: flex-start" @click="logout">
               Đăng xuất
@@ -282,5 +292,11 @@ onMounted(() => {
   max-width: 900px;
   margin: 0 auto;
   padding: 16px;
+}
+
+@media (max-width: 640px) {
+  .settings-page {
+    padding: 12px;
+  }
 }
 </style>

@@ -70,11 +70,13 @@ Triết lý của project: **mọi dữ liệu thuộc về bạn**. Ứng dụn
 
 ## Ảnh chụp màn hình
 
-> Chưa có ảnh — đặt ảnh vào `docs/screenshots/` rồi nhúng vào đây.
+| Thư viện truyện                                                                                  | Danh sách chapter                                                                                          |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| <img src="docs/screenshots/library.png" width="400" alt="Thư viện truyện — card grid, tìm kiếm, sắp theo mới cập nhật" /> | <img src="docs/screenshots/chapters.png" width="400" alt="Trang truyện — danh sách chapter, ribbon chương đang đọc, nút Tiếp tục đọc" /> |
 
-| Thư viện                         | Đang đọc                        |
-| -------------------------------- | ------------------------------- |
-| _(docs/screenshots/library.png)_ | _(docs/screenshots/reader.png)_ |
+<div align="center">
+  <img src="docs/screenshots/reader.png" width="400" alt="Reader — toolbar Ảnh/PDF, chuyển chương, cuộn dọc" />
+</div>
 
 ## Bắt đầu nhanh
 

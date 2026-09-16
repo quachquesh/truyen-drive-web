@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import * as pdfjsLib from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { NButton, NSpace, NSpin, NText } from 'naive-ui'
 
+import AppIcon from '@/components/AppIcon.vue'
+import PdfPage from '@/components/PdfPage.vue'
 import { ensureFileBlob } from '@/lib/blobCache'
 import { DriveFileBlockedError, toErrorMessage } from '@/lib/driveApi'
 import type { PdfDocument } from '@/lib/pdfDoc'
 import type { ChapterFile } from '@/lib/scanner'
-import PdfPage from '@/components/PdfPage.vue'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -19,7 +20,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{ loading: [value: boolean] }>()
 
-const pdf = ref<PdfDocument | null>(null)
+// shallowRef: ref() thường sẽ deep-wrap document pdfjs bằng reactive proxy,
+// làm class pdfjs truy cập private field (#pagesNumber...) qua proxy → TypeError.
+const pdf = shallowRef<PdfDocument | null>(null)
 const numPages = ref(0)
 const aspectRatio = ref(0.7071)
 const state = ref<'loading' | 'ready' | 'error'>('loading')
@@ -36,7 +39,10 @@ async function load(): Promise<void> {
   try {
     const blob = await ensureFileBlob(props.file.id, props.storyKey)
     const data = new Uint8Array(await blob.arrayBuffer())
-    loadingTask = pdfjsLib.getDocument({ data })
+    // Tắt WebCodecs ImageDecoder: đường decode cổ điển (canvas) đã được verify
+    // render 19/19 trang file MuPDF mẫu ngoài browser; đường ImageDecoder chưa
+    // kiểm chứng — nếu treo, watchdog PdfPage sẽ lộ sau 30s.
+    loadingTask = pdfjsLib.getDocument({ data, isImageDecoderSupported: false })
     // pdfjs v6 types lỗi danh tính — cast về interface dùng chung của app
     const doc = (await loadingTask.promise) as PdfDocument
     pdf.value = doc
@@ -54,7 +60,7 @@ async function load(): Promise<void> {
       // PDF bị chặn tải: preview chỉ có trang 1 → phải xem trực tiếp trên Drive
       blocked.value = true
       errorText.value =
-        'Google chặn tải PDF này (view-only). Ảnh preview chỉ có trang 1 nên không đọc được trong app — xem trực tiếp trên Drive (viewer xem được).'
+        'File này chỉ xem được trên Drive (không cho tải về). Ảnh xem trước chỉ có trang 1 nên không đọc được trong ứng dụng — bấm nút bên dưới để xem trực tiếp trên Drive.'
     } else {
       errorText.value = toErrorMessage(error)
     }
@@ -88,10 +94,13 @@ onBeforeUnmount(() => {
     <div v-else-if="state === 'error'" class="pdf-loading">
       <NText type="error" style="text-align: center; max-width: 480px">{{ errorText }}</NText>
       <NSpace size="small" style="margin-top: 8px">
-        <NButton v-if="blocked" size="small" type="primary" secondary @click="openDrivePreview">
-          Xem trên Drive ↗
+        <NButton v-if="blocked" size="medium" type="primary" secondary @click="openDrivePreview">
+          <template #icon>
+            <AppIcon name="external" :size="15" />
+          </template>
+          Xem trên Drive
         </NButton>
-        <NButton size="small" secondary @click="load">Thử lại</NButton>
+        <NButton size="medium" secondary @click="load">Thử lại</NButton>
       </NSpace>
     </div>
 
@@ -114,10 +123,12 @@ onBeforeUnmount(() => {
 
 .pdf-loading {
   min-height: 60vh;
+  min-height: 60dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 12px;
+  padding: 0 16px;
 }
 </style>

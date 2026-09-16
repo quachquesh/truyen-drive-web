@@ -45,7 +45,7 @@ vi.mock('@/lib/scanner', () => ({
 // Mock IndexedDB — cache mirror bằng Map, folderTypes mirror bằng Map
 const folderTypeStore = new Map<
   string,
-  { folderId: string; type: 'story' | 'group'; markedAt: number }
+  { folderId: string; type: 'story' | 'group' | 'list'; markedAt: number }
 >()
 const cacheStore = new Map<string, { key: string; data: unknown; fetchedAt: number }>()
 const tombstoneStore = new Map<string, { key: string; deletedAt: number }>()
@@ -59,10 +59,12 @@ vi.mock('@/lib/db', () => ({
   }),
   clearChaptersCache: () => clearChaptersCache(),
   getFolderTypes: vi.fn<
-    () => Promise<Array<{ folderId: string; type: 'story' | 'group'; markedAt: number }>>
+    () => Promise<Array<{ folderId: string; type: 'story' | 'group' | 'list'; markedAt: number }>>
   >(async () => [...folderTypeStore.values()]),
   putFolderType: vi.fn<
-    (record: { folderId: string; type: 'story' | 'group'; markedAt: number }) => Promise<void>
+    (
+      record: { folderId: string; type: 'story' | 'group' | 'list'; markedAt: number },
+    ) => Promise<void>
   >(async (record) => {
     folderTypeStore.set(record.folderId, record)
   }),
@@ -165,7 +167,7 @@ describe('storiesStore.openLibrary (không auto-detect)', () => {
   })
 })
 
-describe('storiesStore.markAsStory / unmarkStory / markAsGroup', () => {
+describe('storiesStore.markAsStory / unmarkStory / markAsGroup / markAsList', () => {
   it('markAsStory lưu đánh dấu + trigger quét chapter', async () => {
     setupLibrary()
     const storiesStore = useStoriesStore()
@@ -215,5 +217,65 @@ describe('storiesStore.markAsStory / unmarkStory / markAsGroup', () => {
     const options = calls[calls.length - 1]?.[1]
     expect(options?.groupMarks).toBeInstanceOf(Set)
     expect(options?.groupMarks?.has('story-1-c1')).toBe(true)
+  })
+
+  it('markAsList lưu type list, KHÔNG xóa cache chapter (không ảnh hưởng quét)', async () => {
+    setupLibrary()
+    const storiesStore = useStoriesStore()
+    await storiesStore.openLibrary('uuid-noi-bo')
+
+    await storiesStore.markAsList('drop-truyen')
+    expect(folderTypeStore.get('drop-truyen')?.type).toBe('list')
+    expect(storiesStore.lists['drop-truyen']).toBe(true)
+    expect(storiesStore.groups['drop-truyen']).toBeUndefined()
+    expect(clearChaptersCache).not.toHaveBeenCalled()
+
+    // quét truyện KHÔNG truyền folder đánh dấu list vào groupMarks
+    await storiesStore.markAsStory('story-1')
+    await vi.waitFor(() => {
+      expect(scanStory).toHaveBeenCalled()
+    })
+    const calls = vi.mocked(scanStory).mock.calls
+    const options = calls[calls.length - 1]?.[1]
+    expect(options?.groupMarks?.has('drop-truyen')).toBe(false)
+  })
+
+  it('unmarkList xóa đánh dấu list + ghi tombstone', async () => {
+    setupLibrary()
+    const storiesStore = useStoriesStore()
+    await storiesStore.openLibrary('uuid-noi-bo')
+
+    await storiesStore.markAsList('drop-truyen')
+    await storiesStore.unmarkList('drop-truyen')
+
+    expect(folderTypeStore.has('drop-truyen')).toBe(false)
+    expect(storiesStore.lists['drop-truyen']).toBeUndefined()
+    expect([...tombstoneStore.keys()]).toContain('mark:drop-truyen')
+  })
+
+  it('markAsStory ghi đè đánh dấu cũ → dọn groups/lists stale trong memory', async () => {
+    setupLibrary()
+    const storiesStore = useStoriesStore()
+    await storiesStore.openLibrary('uuid-noi-bo')
+
+    await storiesStore.markAsGroup('story-1')
+    await storiesStore.markAsStory('story-1')
+    expect(folderTypeStore.get('story-1')?.type).toBe('story')
+    expect(storiesStore.marks['story-1']).toBe('story')
+    expect(storiesStore.groups['story-1']).toBeUndefined()
+  })
+
+  it('loadMarks tách đúng 3 loại story / group / list', async () => {
+    setupLibrary()
+    folderTypeStore.set('story-1', { folderId: 'story-1', type: 'story', markedAt: 1 })
+    folderTypeStore.set('story-1-c1', { folderId: 'story-1-c1', type: 'group', markedAt: 2 })
+    folderTypeStore.set('drop-truyen', { folderId: 'drop-truyen', type: 'list', markedAt: 3 })
+
+    const storiesStore = useStoriesStore()
+    await storiesStore.openLibrary('uuid-noi-bo')
+
+    expect(storiesStore.marks['story-1']).toBe('story')
+    expect(storiesStore.groups['story-1-c1']).toBe(true)
+    expect(storiesStore.lists['drop-truyen']).toBe(true)
   })
 })

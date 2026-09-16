@@ -41,4 +41,7 @@ __screenshots__/
 # ZCode agent session artifacts (plans etc.)
 .zcode/
 
+# Codegraph index (local tool cache)
+.codegraph/
+
 bun.lock

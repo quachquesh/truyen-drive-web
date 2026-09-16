@@ -95,8 +95,9 @@ const sections = [
             trang thư mục). Từ lúc đó ứng dụng mới quét danh sách chương bên trong.
           </li>
           <li>
-            Folder chỉ để chứa truyện (kiểu <code>Drop truyện/</code>) → không cần đánh dấu gì, bấm
-            vào là xem danh sách truyện bên trong.
+            Folder chỉ để chứa truyện (kiểu <code>Drop truyện/</code>) → bấm vào là xem danh sách
+            truyện bên trong; muốn app nhớ và gắn nhãn "Danh sách truyện" trên card thì bấm
+            <strong>Đây là danh sách nhiều truyện</strong> ở đầu trang thư mục.
           </li>
           <li>
             Chương nằm trong folder trung gian (kiểu <code>0-100/</code>) → dòng đó hiện thành 1

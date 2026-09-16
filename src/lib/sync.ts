@@ -37,7 +37,7 @@ export interface SyncLibrary {
 
 export interface SyncMark {
   folderId: string
-  type: 'story' | 'group'
+  type: 'story' | 'group' | 'list'
   markedAt: number
 }
 

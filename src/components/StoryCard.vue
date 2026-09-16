@@ -16,6 +16,8 @@ const emit = defineEmits<{
 }>()
 
 const marked = computed(() => Boolean(storiesStore.marks[props.story.id]))
+const listMarked = computed(() => Boolean(storiesStore.lists[props.story.id]))
+const groupMarked = computed(() => Boolean(storiesStore.groups[props.story.id]))
 
 /** "45/100" khi biết số thứ tự chapter, không thì hiện tên chapter */
 const progressText = computed(() => {
@@ -101,6 +103,36 @@ const modifiedText = computed(() => {
       </NButton>
     </div>
 
+    <!-- Đã phân loại là danh sách truyện / nhóm chapter: hiện nhãn đúng trạng thái -->
+    <div v-else-if="listMarked || groupMarked" class="story-meta">
+      <NTooltip>
+        <template #trigger>
+          <NTag v-if="listMarked" size="small" :bordered="false" type="info">
+            Danh sách truyện
+          </NTag>
+          <NTag v-else size="small" :bordered="false" type="success">Nhóm chapter</NTag>
+        </template>
+        <template v-if="listMarked">
+          Đã ghi nhớ đây là danh sách nhiều truyện — bấm vào thẻ để mở danh sách bên trong.
+        </template>
+        <template v-else>
+          Đã ghi nhớ đây là nhóm chapter — chapter bên trong hiện trong truyện chứa nó.
+        </template>
+      </NTooltip>
+      <div class="spacer" />
+      <NButton
+        text
+        size="small"
+        class="folder-btn"
+        title="Xem nội dung thư mục"
+        @click.stop="emit('openFolder', story)"
+      >
+        <template #icon>
+          <AppIcon name="folder" :size="15" />
+        </template>
+      </NButton>
+    </div>
+
     <!-- Chưa phân loại: user xem nội dung để quyết định -->
     <div v-else class="story-meta">
       <NTooltip>
@@ -132,8 +164,10 @@ const modifiedText = computed(() => {
   height: 100%;
 }
 
-/* Card cao bằng nhau theo hàng grid → content dãn dọc, meta pin xuống đáy */
-.story-card :deep(.n-card__content) {
+/* Card cao bằng nhau theo hàng grid → content dãn dọc, meta pin xuống đáy.
+ * Class content của NCard là n-card-content (gạch đơn, không phải __) — sai tên
+ * thì rule chết và margin-top:auto không bao giờ pin được. */
+.story-card :deep(.n-card-content) {
   height: 100%;
   display: flex;
   flex-direction: column;

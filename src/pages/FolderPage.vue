@@ -29,6 +29,7 @@ const search = ref('')
 
 const marked = computed(() => Boolean(storiesStore.marks[folderId.value]))
 const groupMarked = computed(() => Boolean(storiesStore.groups[folderId.value]))
+const listMarked = computed(() => Boolean(storiesStore.lists[folderId.value]))
 
 function deaccent(value: string): string {
   return value
@@ -77,8 +78,8 @@ async function markCurrentAsStory(): Promise<void> {
 }
 
 /** User xác nhận folder hiện tại chỉ là danh sách chứa nhiều truyện */
-async function markCurrentAsGroup(): Promise<void> {
-  await storiesStore.markAsGroup(folderId.value)
+async function markCurrentAsList(): Promise<void> {
+  await storiesStore.markAsList(folderId.value)
 }
 
 /** Card đã đánh dấu → vào chapter; chưa đánh dấu → xem sâu hơn để quyết định */
@@ -104,6 +105,10 @@ function markChild(child: StorySummary): void {
 
 async function unmarkGroup(): Promise<void> {
   await storiesStore.unmarkGroup(folderId.value)
+}
+
+async function unmarkList(): Promise<void> {
+  await storiesStore.unmarkList(folderId.value)
 }
 
 onMounted(() => {
@@ -147,7 +152,7 @@ watch(folderId, () => {
     </div>
 
     <!-- Quyết định của user: folder này là truyện hay list truyện -->
-    <div v-if="!marked && !groupMarked" class="classify-banner">
+    <div v-if="!marked && !groupMarked && !listMarked" class="classify-banner">
       <div class="classify-title">
         Thư mục này là <strong>một bộ truyện</strong> hay <strong>một danh sách truyện</strong>?
       </div>
@@ -158,7 +163,7 @@ watch(folderId, () => {
           </template>
           Đây là một bộ truyện — đọc ngay
         </NButton>
-        <NButton secondary @click="markCurrentAsGroup">
+        <NButton secondary @click="markCurrentAsList">
           <template #icon>
             <AppIcon name="layers" :size="16" />
           </template>
@@ -169,6 +174,16 @@ watch(folderId, () => {
         Chưa chắc? Bấm vào từng thư mục bên dưới để xem bên trong có gì.
       </NText>
     </div>
+
+    <NAlert v-else-if="listMarked" type="success" :bordered="false" style="margin-bottom: 14px">
+      <div class="group-marked-row">
+        <span>
+          Đã ghi nhớ đây là <strong>danh sách nhiều truyện</strong> — mở thư mục để xem và phân
+          loại từng truyện bên trong.
+        </span>
+        <NButton size="small" secondary @click="unmarkList">Bỏ đánh dấu</NButton>
+      </div>
+    </NAlert>
 
     <NAlert v-else-if="groupMarked" type="success" :bordered="false" style="margin-bottom: 14px">
       <div class="group-marked-row">

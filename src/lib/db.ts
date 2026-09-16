@@ -43,8 +43,11 @@ export interface ProgressRecord {
 /** Đánh dấu loại folder do USER quyết định (không auto-detect) */
 export interface FolderTypeRecord {
   folderId: string
-  /** 'story' = truyện (quét chapter con trực tiếp); 'group' = nhóm chapter (con được đưa lên cùng cấp) */
-  type: 'story' | 'group'
+  /**
+   * 'story' = truyện (quét chapter con trực tiếp); 'group' = nhóm chapter (con được đưa lên cùng cấp);
+   * 'list' = danh sách chứa nhiều truyện (chỉ là nhãn phân loại, không ảnh hưởng quét)
+   */
+  type: 'story' | 'group' | 'list'
   markedAt: number
 }
 

@@ -30,6 +30,7 @@ const chaptersKey = (storyId: string): string => `chapters:${storyId}`
  * - KHÔNG tự động quét chapter — chỉ folder nào được USER đánh dấu là truyện
  *   (marks) mới quét (batch theo tầng, lấy mẫu nhóm), counts hiện dần
  * - folder chưa đánh dấu: hiện "Chưa phân loại", bấm vào xem nội dung để quyết định
+ * - đánh dấu "list" (danh sách nhiều truyện) chỉ là nhãn — không ảnh hưởng quét
  */
 export const useStoriesStore = defineStore('stories', {
   state: () => ({
@@ -48,6 +49,8 @@ export const useStoriesStore = defineStore('stories', {
     marks: {} as Record<string, 'story'>,
     /** Đánh dấu "là nhóm chapter" của user: folderId → true */
     groups: {} as Record<string, true>,
+    /** Đánh dấu "là danh sách nhiều truyện" của user: folderId → true */
+    lists: {} as Record<string, true>,
     marksLoaded: false,
     /** scan đang chạy theo storyId — chống quét trùng */
     pendingScans: new Map<string, Promise<ChapterRef[]>>(),
@@ -60,12 +63,15 @@ export const useStoriesStore = defineStore('stories', {
       const records = await getFolderTypes()
       const marks: Record<string, 'story'> = {}
       const groups: Record<string, true> = {}
+      const lists: Record<string, true> = {}
       for (const record of records) {
         if (record.type === 'story') marks[record.folderId] = 'story'
-        else groups[record.folderId] = true
+        else if (record.type === 'group') groups[record.folderId] = true
+        else lists[record.folderId] = true
       }
       this.marks = marks
       this.groups = groups
+      this.lists = lists
       this.marksLoaded = true
     },
 
@@ -171,6 +177,9 @@ export const useStoriesStore = defineStore('stories', {
       if (this.marks[folderId]) return
       await putFolderType({ folderId, type: 'story', markedAt: Date.now() })
       this.marks[folderId] = 'story'
+      // Record ghi đè loại cũ (group/list) → dọn map tương ứng khỏi stale
+      delete this.groups[folderId]
+      delete this.lists[folderId]
       useSyncStore().schedulePush()
       void this.ensureChapters(this.libId, folderId).catch(() => {
         // lỗi đã ghi vào scanErrors
@@ -206,6 +215,24 @@ export const useStoriesStore = defineStore('stories', {
       await putTombstone(markTombstoneKey(folderId), Date.now())
       delete this.groups[folderId]
       await clearChaptersCache()
+      useSyncStore().schedulePush()
+    },
+
+    /**
+     * USER đánh dấu folder là DANH SÁCH nhiều truyện → chỉ là nhãn phân loại,
+     * không ảnh hưởng quét chapter nên KHÔNG xóa cache.
+     */
+    async markAsList(folderId: string): Promise<void> {
+      if (this.lists[folderId]) return
+      await putFolderType({ folderId, type: 'list', markedAt: Date.now() })
+      this.lists[folderId] = true
+      useSyncStore().schedulePush()
+    },
+
+    async unmarkList(folderId: string): Promise<void> {
+      await deleteFolderType(folderId)
+      await putTombstone(markTombstoneKey(folderId), Date.now())
+      delete this.lists[folderId]
       useSyncStore().schedulePush()
     },
 

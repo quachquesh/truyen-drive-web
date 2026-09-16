@@ -4,6 +4,15 @@ Các thay đổi đáng chú ý của project được ghi ở file này theo fo
 
 ## [Unreleased]
 
+## [1.0.2] — 2026-09-17
+
+### Changed
+
+- Ngày trên card truyện giờ là "ngày cập nhật gần nhất" tính cả chap mới bên trong (Drive không đổi ngày folder cha khi thêm con nên trước đó ngày đứng yên dù đã up chap); sắp xếp "Mới cập nhật" theo ngày này, kể cả chapter nằm trong folder nhóm đã đánh dấu
+- Danh sách chapter hiện ngày (dd/MM/yyyy) ngay dưới tên từng chapter
+- Trang thư mục (vd folder "danh sách truyện") cũng tính ngày cập nhật từ nội dung bên trong
+- Lần mở đầu tiên sau khi cập nhật, app tự quét lại danh sách 1 lần để lấy ngày mới (cache cũ thiếu dữ liệu)
+
 ## [1.0.1] — 2026-09-17
 
 ### Changed

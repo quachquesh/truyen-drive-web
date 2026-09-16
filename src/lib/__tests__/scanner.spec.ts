@@ -5,7 +5,12 @@ import type { DriveItem } from '../driveApi'
 // Mock Drive: map folderId → toàn bộ con (folder + file)
 const folders: Record<string, DriveItem[]> = {
   // Truyện A: nhóm 0-30 (4 chapter) + chapter trực tiếp 31, 32
-  root: [folder('f-31', '31'), folder('f-32', '32'), folder('f-0-30', '0-30'), file('ignored.txt', 'text/plain')],
+  root: [
+    folder('f-31', '31', '2026-09-15T08:00:00.000Z'),
+    folder('f-32', '32'),
+    folder('f-0-30', '0-30'),
+    file('ignored.txt', 'text/plain'),
+  ],
   'f-31': [file('002.jpg', 'image/jpeg'), file('001.jpg', 'image/jpeg')],
   'f-32': [file('truyen.pdf', 'application/pdf')],
   'f-0-30': [folder('c-0', '0'), folder('c-2', '2'), folder('c-5', '5'), folder('c-10', '10')],
@@ -25,8 +30,13 @@ const folders: Record<string, DriveItem[]> = {
   'c-empty': [],
 }
 
-function folder(id: string, name: string): DriveItem {
-  return { id, name, mimeType: 'application/vnd.google-apps.folder' }
+function folder(id: string, name: string, modifiedTime?: string): DriveItem {
+  return {
+    id,
+    name,
+    mimeType: 'application/vnd.google-apps.folder',
+    ...(modifiedTime ? { modifiedTime } : {}),
+  }
 }
 
 function file(name: string, mimeType: string): DriveItem {
@@ -72,7 +82,7 @@ vi.mock('../db', () => ({
 }))
 
 import { listChildren } from '../driveApi'
-import { ensureChapterFiles, scanStories, scanStory } from '../scanner'
+import { ensureChapterFiles, scanLibraryStories, scanStories, scanStory } from '../scanner'
 
 beforeEach(() => {
   vi.mocked(listChildren).mockClear()
@@ -176,5 +186,14 @@ describe('ensureChapterFiles (lazy — chỉ lấy khi mở chapter)', () => {
     expect(listChildren).toHaveBeenCalledTimes(1)
     await ensureChapterFiles('c-2', '2', { force: true })
     expect(listChildren).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('scanLibraryStories', () => {
+  it('chỉ lấy folder con, sort tự nhiên, giữ ngày sửa đổi', async () => {
+    const stories = await scanLibraryStories('root')
+    expect(stories.map((story) => story.name)).toEqual(['0-30', '31', '32'])
+    expect(stories[0]?.modifiedTime).toBeUndefined()
+    expect(stories[1]?.modifiedTime).toBe('2026-09-15T08:00:00.000Z')
   })
 })

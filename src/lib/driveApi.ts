@@ -23,6 +23,8 @@ export interface DriveItem {
   mimeType: string
   /** Link preview do Google render (ký sẵn) — viewer xem được kể cả khi tải bị chặn */
   thumbnailLink?: string
+  /** Ngày sửa đổi cuối (RFC 3339) — hiển thị trên danh sách truyện */
+  modifiedTime?: string
 }
 
 export interface DriveUser {
@@ -168,7 +170,7 @@ export async function listChildren(
     const res = await http.get<{ files?: DriveItem[]; nextPageToken?: string }>('/files', {
       params: {
         q: `'${folderId}' in parents and trashed = false`,
-        fields: 'nextPageToken, files(id, name, mimeType, thumbnailLink)',
+        fields: 'nextPageToken, files(id, name, mimeType, thumbnailLink, modifiedTime)',
         pageSize: 1000,
         pageToken,
       },
@@ -211,6 +213,28 @@ export async function listSharedFolders(
 }
 
 /**
+ * Tìm folder theo tên trên TOÀN BỘ Drive (My Drive + được chia sẻ + shared drive),
+ * không phụ thuộc vị trí — dùng trong picker chọn kho. Giới hạn 50 kết quả.
+ */
+export async function searchFolders(
+  nameQuery: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<DriveItem[]> {
+  const escaped = nameQuery.replace(/'/g, "\\'")
+  const res = await http.get<{ files?: DriveItem[] }>('/files', {
+    params: {
+      q: `name contains '${escaped}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: 'files(id, name, mimeType)',
+      pageSize: 50,
+      supportsAllDrives: true,
+      includeItemsFromSharedDrives: true,
+    },
+    signal: options.signal,
+  })
+  return res.data.files ?? []
+}
+
+/**
  * Liệt kê con của NHIỀU folder trong vài request duy nhất bằng query
  * `('id1' in parents or 'id2' in parents ...) and trashed = false`.
  * Kết quả nhóm theo cha qua field `parents`. Chunk 50 cha/request để
@@ -241,7 +265,7 @@ export async function listChildrenGrouped(
       }>('/files', {
         params: {
           q: `((${parentsQuery}) and trashed = false)${mimeFilter}`,
-          fields: 'nextPageToken, files(id, name, mimeType, parents)',
+          fields: 'nextPageToken, files(id, name, mimeType, parents, modifiedTime)',
           pageSize: 1000,
           pageToken,
         },
@@ -252,7 +276,10 @@ export async function listChildrenGrouped(
         if (!parent) continue
         const list = grouped.get(parent)
         if (list) list.push(file)
-        else grouped.set(parent, [{ id: file.id, name: file.name, mimeType: file.mimeType }])
+        else
+          grouped.set(parent, [
+            { id: file.id, name: file.name, mimeType: file.mimeType, modifiedTime: file.modifiedTime },
+          ])
       }
       pageToken = res.data.nextPageToken
     } while (pageToken)

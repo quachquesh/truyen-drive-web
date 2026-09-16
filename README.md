@@ -6,7 +6,7 @@ Web app đọc truyện tranh từ kho Google Drive **riêng tư** — chỉ fro
 
 - **Đăng nhập Google** (Google Identity Services, implicit flow) — chỉ tài khoản được chia sẻ kho mới đọc được nội dung
 - **Token không lưu trên máy**: token chỉ nằm trong memory. Refresh trang → app tự xin token lại (silent, không cần bấm nút nếu còn session Google)
-- **Nhiều kho truyện**: **chọn trực tiếp folder từ Drive** (duyệt "Đã chia sẻ với tôi" / "My Drive" ngay trong app) hoặc dán URL/ID folder, chuyển kho nhanh từ header
+- **Nhiều kho truyện**: **chọn trực tiếp folder từ Drive** (duyệt "Đã chia sẻ với tôi" / "My Drive" + ô tìm theo tên trên toàn bộ Drive) hoặc dán URL/ID folder, chuyển kho nhanh từ header
 - **NGƯỜI DÙNG quyết định cấu trúc** (không auto-detect): mở kho chỉ list folder (không quét gì). Folder chưa phân loại bấm vào sẽ **xem nội dung** để quyết định; nút **📖 Đọc truyện** trên card (hoặc banner trên trang thư mục) xác nhận "đây là truyện" → khi đó mới quét chapter bên trong (batch + lấy mẫu nhóm — cả truyện chỉ ~vài request). Folder "list truyện" (kiểu `Drop/`) không cần đánh dấu — bấm vào là xem danh sách bên trong, tiếp tục quyết định từng truyện. Đánh dấu lưu vĩnh viễn trong IndexedDB; có nút bỏ đánh dấu trên trang chapter nếu phân loại nhầm.
 
   Chapter quét **tự động đúng 1 cấp**: danh sách chapter = các folder con trực tiếp của truyện (1 request batch, không suy diễn). Folder nào thực chất là nhóm (kiểu `0-80`) hiện thành 1 dòng — bấm **⤴ Nhóm** trên dòng đó (hoặc trong màn "Chapter trống") để đưa chapter bên trong lên cùng cấp; nhóm lồng nhau đánh dấu tiếp từng tầng. Đánh dấu nhóm lưu vĩnh viễn; bỏ được ở trang xem thư mục. Danh sách sort tự nhiên (`2 < 10 < 100`).

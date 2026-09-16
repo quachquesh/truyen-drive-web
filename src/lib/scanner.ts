@@ -33,6 +33,8 @@ export interface ChapterWithFiles extends ChapterRef {
 export interface StorySummary {
   id: string
   name: string
+  /** Ngày folder được sửa đổi cuối trên Drive (RFC 3339) */
+  modifiedTime?: string
 }
 
 export interface ScanOptions {
@@ -197,7 +199,11 @@ export async function scanLibraryStories(
 ): Promise<StorySummary[]> {
   const children = await listChildren(libraryFolderId, { signal: options.signal })
   return naturalSort(
-    children.filter(isFolder).map((file) => ({ id: file.id, name: file.name })),
+    children.filter(isFolder).map((file) => ({
+      id: file.id,
+      name: file.name,
+      modifiedTime: file.modifiedTime,
+    })),
     (story) => story.name,
   )
 }

@@ -67,7 +67,7 @@ async function load(): Promise<void> {
     const grouped = await listChildrenGrouped([folderId.value])
     const items = (grouped.get(folderId.value) ?? []).filter((item) => item.mimeType === FOLDER_MIME)
     children.value = naturalSort(
-      items.map((item) => ({ id: item.id, name: item.name })),
+      items.map((item) => ({ id: item.id, name: item.name, modifiedTime: item.modifiedTime })),
       (child) => child.name,
     )
   } catch (e) {

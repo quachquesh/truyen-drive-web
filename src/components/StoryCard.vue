@@ -14,11 +14,27 @@ const emit = defineEmits<{
 }>()
 
 const marked = computed(() => Boolean(storiesStore.marks[props.story.id]))
+
+/** dd/MM/yyyy từ modifiedTime của Drive; rỗng nếu không có (cache cũ) hoặc lỗi parse */
+const modifiedText = computed(() => {
+  const iso = props.story.modifiedTime
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
+})
 </script>
 
 <template>
   <NCard hoverable size="small" class="story-card">
     <div class="story-name" :title="story.name">{{ story.name }}</div>
+    <NText v-if="modifiedText" depth="3" class="modified" title="Ngày sửa đổi trên Drive">
+      🗓 {{ modifiedText }}
+    </NText>
 
     <!-- Đã xác nhận là truyện: hiện số chap + mới nhất -->
     <div v-if="marked" class="story-meta">
@@ -81,6 +97,13 @@ const marked = computed(() => Boolean(storiesStore.marks[props.story.id]))
   -webkit-box-orient: vertical;
   min-height: 2.7em;
   word-break: break-word;
+}
+
+.modified {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .story-meta {

@@ -70,12 +70,26 @@ let dbPromise: Promise<IDBPDatabase<TruyenDB>> | null = null
 
 function getDb(): Promise<IDBPDatabase<TruyenDB>> {
   dbPromise ??= openDB<TruyenDB>(DB_NAME, DB_VERSION, {
+    /**
+     * PHẢI kiểm tra store tồn tại trước khi tạo: upgrade chạy trên DB cũ
+     * (VD v2 → v3), createObjectStore trùng store sẵn có ném ConstraintError
+     * → abort toàn bộ version-change transaction ("Version change transaction
+     * was aborted in upgradeneeded event handler") và DB kẹt ở version cũ.
+     */
     upgrade(db) {
-      db.createObjectStore('libraries', { keyPath: 'id' })
-      db.createObjectStore('cache', { keyPath: 'key' })
-      const blobs = db.createObjectStore('blobs', { keyPath: 'fileId' })
-      blobs.createIndex('by-story', 'storyKey')
-      db.createObjectStore('progress', { keyPath: 'key' })
+      if (!db.objectStoreNames.contains('libraries')) {
+        db.createObjectStore('libraries', { keyPath: 'id' })
+      }
+      if (!db.objectStoreNames.contains('cache')) {
+        db.createObjectStore('cache', { keyPath: 'key' })
+      }
+      if (!db.objectStoreNames.contains('blobs')) {
+        const blobs = db.createObjectStore('blobs', { keyPath: 'fileId' })
+        blobs.createIndex('by-story', 'storyKey')
+      }
+      if (!db.objectStoreNames.contains('progress')) {
+        db.createObjectStore('progress', { keyPath: 'key' })
+      }
       if (!db.objectStoreNames.contains('folderTypes')) {
         db.createObjectStore('folderTypes', { keyPath: 'folderId' })
       }
@@ -236,4 +250,28 @@ export async function storageEstimate(): Promise<{ usage: number; quota: number 
 
 export async function clearAllCaches(): Promise<void> {
   await Promise.all([clearListCache(), clearBlobs(), clearProgress()])
+}
+
+/**
+ * Xóa toàn bộ database (kho, tiến trình, đánh dấu, cache — tất cả).
+ * Đóng connection trước, nếu không deleteDatabase bị block. Caller phải
+ * reload trang sau khi gọi để mọi module mở lại DB từ đầu.
+ */
+export async function deleteDatabase(): Promise<void> {
+  if (dbPromise) {
+    try {
+      const db = await dbPromise
+      db.close()
+    } catch {
+      // Lần open trước fail (VD upgrade abort) → không có connection để đóng
+    }
+    dbPromise = null
+  }
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DB_NAME)
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(request.error ?? new Error('Không xóa được IndexedDB'))
+    // Tab khác còn giữ connection → DB sẽ bị xóa khi tab đó đóng; không chặn
+    request.onblocked = () => resolve()
+  })
 }

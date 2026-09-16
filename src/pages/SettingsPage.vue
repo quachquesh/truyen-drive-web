@@ -21,6 +21,7 @@ import {
   clearListCache,
   clearProgress,
   clearAllCaches,
+  deleteDatabase,
   storageEstimate,
 } from '@/lib/db'
 import { useAuthStore } from '@/stores/auth'
@@ -99,6 +100,22 @@ function clearEverything(): void {
   })
 }
 
+/** Đặt lại app từ đầu: xóa hẳn database + tải lại trang (không chỉ cache). */
+function resetApp(): void {
+  dialog.error({
+    title: 'Xóa TOÀN BỘ IndexedDB?',
+    content:
+      'Đặt lại app từ đầu: xóa sạch kho truyện, tiến trình đọc, đánh dấu và mọi cache. ' +
+      'Trang sẽ tải lại ngay sau đó. Nếu đang bật đồng bộ, dữ liệu sẽ được tự kéo lại từ Google Drive.',
+    positiveText: 'Xóa & tải lại',
+    negativeText: 'Hủy',
+    onPositiveClick: async () => {
+      await deleteDatabase()
+      location.reload()
+    },
+  })
+}
+
 function formatSyncTime(ts: number): string {
   return new Date(ts).toLocaleString('vi-VN', {
     hour: '2-digit',
@@ -171,6 +188,9 @@ onMounted(() => {
               >
               <NButton size="small" secondary type="error" @click="clearEverything"
                 >Xóa toàn bộ</NButton
+              >
+              <NButton size="small" secondary type="error" @click="resetApp"
+                >Xóa IndexedDB (đặt lại app)</NButton
               >
             </NSpace>
 

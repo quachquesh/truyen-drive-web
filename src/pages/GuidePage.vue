@@ -40,6 +40,20 @@ const sections = [
           <em>lưu dữ liệu của ứng dụng</em> (để đồng bộ tiến độ đọc).
         </p>
         <p>
+          Thấy bảng cảnh báo <strong>“Google chưa xác minh ứng dụng này”</strong>? — bình thường.
+          Đây là ứng dụng cá nhân tự tạo trong Google Cloud Console, không qua quy trình xác minh
+          của Google (quy trình đó chỉ dành cho ứng dụng công khai có nhiều người dùng); email nhà
+          phát triển hiển thị trong cảnh báo chính là chủ ứng dụng. Ứng dụng chỉ xin
+          <em>xem file trên Drive</em> (chỉ đọc) và <em>lưu dữ liệu đồng bộ</em> — không đụng tới
+          thứ khác trong tài khoản của bạn. Cách tiếp tục:
+        </p>
+        <ul>
+          <li>Trong bảng cảnh báo, bấm <strong>Nâng cao</strong>.</li>
+          <li>
+            Chọn dòng <strong>“Đi đến … (không an toàn)”</strong> rồi cấp quyền như bình thường.
+          </li>
+        </ul>
+        <p>
           Các lần sau mở trang, ứng dụng tự kết nối lại với Google — bạn vào thẳng thư viện mà không
           cần bấm gì. Token đăng nhập không lưu trên máy, nên đôi khi trình duyệt yêu cầu xác nhận
           lại — khi đó chỉ cần bấm nút đăng nhập <strong>một cái là vào lại</strong> (Google không

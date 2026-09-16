@@ -4,6 +4,14 @@ Các thay đổi đáng chú ý của project được ghi ở file này theo fo
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-09-17
+
+### Changed
+
+- Bỏ tự động đăng nhập ngầm khi mở trang — mỗi phiên bắt đầu ở trang đăng nhập, bấm nút 1 cái là vào lại (Google không hỏi cấp quyền lại); trong phiên vẫn tự gia hạn token như cũ
+- Cảnh báo "Minh bạch về quyền riêng tư" trên trang đăng nhập, chỉ hiện với người dùng lần đầu: app chạy hoàn toàn trên trình duyệt, không thu thập dữ liệu, mã nguồn công khai trên GitHub
+- Cập nhật Hướng dẫn, Cài đặt, README và `docs/architecture.md` theo luồng đăng nhập mới
+
 ## [1.0.0] — 2026-09-16
 
 Bản phát hành chính thức đầu tiên.

@@ -178,13 +178,7 @@ onMounted(() => {
         ←
       </NButton>
       <NText strong class="picker-title" :title="titleText">{{ titleText }}</NText>
-      <NButton
-        size="small"
-        type="primary"
-        secondary
-        :disabled="!canSelect"
-        @click="confirmSelect"
-      >
+      <NButton size="small" type="primary" secondary :disabled="!canSelect" @click="confirmSelect">
         ✓ Chọn folder này
       </NButton>
     </div>

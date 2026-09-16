@@ -48,6 +48,7 @@ const folderTypeStore = new Map<
   { folderId: string; type: 'story' | 'group'; markedAt: number }
 >()
 const cacheStore = new Map<string, { key: string; data: unknown; fetchedAt: number }>()
+const tombstoneStore = new Map<string, { key: string; deletedAt: number }>()
 const clearChaptersCache = vi.fn<() => Promise<void>>(async () => undefined)
 vi.mock('@/lib/db', () => ({
   getCache: vi.fn<
@@ -68,12 +69,16 @@ vi.mock('@/lib/db', () => ({
   deleteFolderType: vi.fn<(folderId: string) => Promise<void>>(async (folderId) => {
     folderTypeStore.delete(folderId)
   }),
+  putTombstone: vi.fn<(key: string, deletedAt: number) => Promise<void>>(async (key, deletedAt) => {
+    tombstoneStore.set(key, { key, deletedAt })
+  }),
 }))
 
 beforeEach(() => {
   vi.clearAllMocks()
   folderTypeStore.clear()
   cacheStore.clear()
+  tombstoneStore.clear()
   setActivePinia(createPinia())
 })
 

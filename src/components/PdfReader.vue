@@ -88,13 +88,7 @@ onBeforeUnmount(() => {
     <div v-else-if="state === 'error'" class="pdf-loading">
       <NText type="error" style="text-align: center; max-width: 480px">{{ errorText }}</NText>
       <NSpace size="small" style="margin-top: 8px">
-        <NButton
-          v-if="blocked"
-          size="small"
-          type="primary"
-          secondary
-          @click="openDrivePreview"
-        >
+        <NButton v-if="blocked" size="small" type="primary" secondary @click="openDrivePreview">
           Xem trên Drive ↗
         </NButton>
         <NButton size="small" secondary @click="load">Thử lại</NButton>

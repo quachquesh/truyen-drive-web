@@ -1,12 +1,14 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 
 export interface LibraryConfig {
-  /** ID nội bộ của app (crypto.randomUUID) */
+  /** ID nội bộ của app (crypto.randomUUID) — KHÁC nhau giữa các thiết bị */
   id: string
   name: string
-  /** Folder ID Google Drive của kho */
+  /** Folder ID Google Drive của kho — khóa ghép khi đồng bộ đa thiết bị */
   folderId: string
   createdAt: number
+  /** Lần sửa cuối (epoch ms) — dùng hợp nhất last-write-wins khi đồng bộ */
+  updatedAt?: number
 }
 
 export interface CacheRecord<T = unknown> {
@@ -42,16 +44,27 @@ export interface FolderTypeRecord {
   markedAt: number
 }
 
+/**
+ * Sự kiện XÓA dùng khi đồng bộ đa thiết bị (tombstone) — chống "hồi sinh"
+ * bản ghi đã xóa trên thiết bị khác. Key: `lib:${folderId}` | `mark:${folderId}`
+ * | `wipe:progress`.
+ */
+export interface TombstoneRecord {
+  key: string
+  deletedAt: number
+}
+
 interface TruyenDB extends DBSchema {
   libraries: { key: string; value: LibraryConfig }
   cache: { key: string; value: CacheRecord }
   blobs: { key: string; value: BlobRecord; indexes: { 'by-story': string } }
   progress: { key: string; value: ProgressRecord }
   folderTypes: { key: string; value: FolderTypeRecord }
+  tombstones: { key: string; value: TombstoneRecord }
 }
 
 const DB_NAME = 'truyen-drive-web'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 let dbPromise: Promise<IDBPDatabase<TruyenDB>> | null = null
 
@@ -65,6 +78,9 @@ function getDb(): Promise<IDBPDatabase<TruyenDB>> {
       db.createObjectStore('progress', { keyPath: 'key' })
       if (!db.objectStoreNames.contains('folderTypes')) {
         db.createObjectStore('folderTypes', { keyPath: 'folderId' })
+      }
+      if (!db.objectStoreNames.contains('tombstones')) {
+        db.createObjectStore('tombstones', { keyPath: 'key' })
       }
     },
   })
@@ -156,9 +172,19 @@ export async function getProgress(key: string): Promise<ProgressRecord | undefin
   return db.get('progress', key)
 }
 
+export async function getAllProgress(): Promise<ProgressRecord[]> {
+  const db = await getDb()
+  return db.getAll('progress')
+}
+
 export async function putProgress(record: ProgressRecord): Promise<void> {
   const db = await getDb()
   await db.put('progress', record)
+}
+
+export async function deleteProgress(key: string): Promise<void> {
+  const db = await getDb()
+  await db.delete('progress', key)
 }
 
 export async function clearProgress(): Promise<void> {
@@ -181,6 +207,23 @@ export async function putFolderType(record: FolderTypeRecord): Promise<void> {
 export async function deleteFolderType(folderId: string): Promise<void> {
   const db = await getDb()
   await db.delete('folderTypes', folderId)
+}
+
+// ---------- tombstones (đồng bộ đa thiết bị) ----------
+
+export async function getTombstones(): Promise<TombstoneRecord[]> {
+  const db = await getDb()
+  return db.getAll('tombstones')
+}
+
+export async function putTombstone(key: string, deletedAt: number): Promise<void> {
+  const db = await getDb()
+  await db.put('tombstones', { key, deletedAt })
+}
+
+export async function deleteTombstone(key: string): Promise<void> {
+  const db = await getDb()
+  await db.delete('tombstones', key)
 }
 
 // ---------- storage ----------

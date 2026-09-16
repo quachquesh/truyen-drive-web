@@ -11,7 +11,9 @@ describe('parseFolderId', () => {
 
   it('trích ID từ URL kèm query params', () => {
     expect(
-      parseFolderId('https://drive.google.com/drive/folders/ABC123defGHI456?usp=sharing&resourcekey=xyz'),
+      parseFolderId(
+        'https://drive.google.com/drive/folders/ABC123defGHI456?usp=sharing&resourcekey=xyz',
+      ),
     ).toBe('ABC123defGHI456')
   })
 
@@ -20,9 +22,7 @@ describe('parseFolderId', () => {
   })
 
   it('trim khoảng trắng', () => {
-    expect(parseFolderId('  1AbC_dEfGhIjKlMnOpQrStUvWxYz  ')).toBe(
-      '1AbC_dEfGhIjKlMnOpQrStUvWxYz',
-    )
+    expect(parseFolderId('  1AbC_dEfGhIjKlMnOpQrStUvWxYz  ')).toBe('1AbC_dEfGhIjKlMnOpQrStUvWxYz')
   })
 
   it('trả null với input rỗng / sai format', () => {

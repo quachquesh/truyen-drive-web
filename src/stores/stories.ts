@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { acceptHMRUpdate, defineStore } from 'pinia'
 
 import { toErrorMessage } from '@/lib/driveApi'
 import {
@@ -7,6 +7,7 @@ import {
   getCache,
   getFolderTypes,
   putFolderType,
+  putTombstone,
   setCache,
 } from '@/lib/db'
 import {
@@ -16,7 +17,9 @@ import {
   type ChapterRef,
   type StorySummary,
 } from '@/lib/scanner'
+import { markTombstoneKey } from '@/lib/sync'
 import { useLibraryStore } from './library'
+import { useSyncStore } from './sync'
 
 const storiesKey = (libId: string): string => `stories:${libId}`
 const chaptersKey = (storyId: string): string => `chapters:${storyId}`
@@ -168,6 +171,7 @@ export const useStoriesStore = defineStore('stories', {
       if (this.marks[folderId]) return
       await putFolderType({ folderId, type: 'story', markedAt: Date.now() })
       this.marks[folderId] = 'story'
+      useSyncStore().schedulePush()
       void this.ensureChapters(this.libId, folderId).catch(() => {
         // lỗi đã ghi vào scanErrors
       })
@@ -176,10 +180,13 @@ export const useStoriesStore = defineStore('stories', {
     /** Bỏ đánh dấu (user đánh nhầm) — cache giữ lại để lần sau đánh dấu lại là có ngay. */
     async unmarkStory(folderId: string): Promise<void> {
       await deleteFolderType(folderId)
+      // Tombstone để máy khác không khôi phục lại đánh dấu đã bỏ
+      await putTombstone(markTombstoneKey(folderId), Date.now())
       delete this.marks[folderId]
       delete this.scanning[folderId]
       delete this.scanErrors[folderId]
       // counts/latest giữ tạm — folder trở lại "Chưa phân loại" trên UI
+      useSyncStore().schedulePush()
     },
 
     /**
@@ -191,12 +198,15 @@ export const useStoriesStore = defineStore('stories', {
       await putFolderType({ folderId, type: 'group', markedAt: Date.now() })
       this.groups[folderId] = true
       await clearChaptersCache()
+      useSyncStore().schedulePush()
     },
 
     async unmarkGroup(folderId: string): Promise<void> {
       await deleteFolderType(folderId)
+      await putTombstone(markTombstoneKey(folderId), Date.now())
       delete this.groups[folderId]
       await clearChaptersCache()
+      useSyncStore().schedulePush()
     },
 
     /**
@@ -262,3 +272,7 @@ export const useStoriesStore = defineStore('stories', {
     },
   },
 })
+
+if (import.meta.hot) {
+  import.meta.hot.accept(acceptHMRUpdate(useStoriesStore, import.meta.hot))
+}

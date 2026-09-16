@@ -1,14 +1,7 @@
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
 
 import { sleep } from './concurrency'
-import {
-  clearToken,
-  getToken,
-  hasToken,
-  isTokenFresh,
-  refreshToken,
-  setToken,
-} from './tokenBox'
+import { clearToken, getToken, hasToken, isTokenFresh, refreshToken, setToken } from './tokenBox'
 
 declare module 'axios' {
   export interface AxiosRequestConfig {
@@ -85,7 +78,9 @@ http.interceptors.request.use(async (config) => {
 http.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    const config = error.config as (AxiosRequestConfig & { headers: Record<string, string> }) | undefined
+    const config = error.config as
+      | (AxiosRequestConfig & { headers: Record<string, string> })
+      | undefined
     if (!config) throw error
 
     const status = error.response?.status
@@ -134,9 +129,12 @@ async function isRateLimitError(error: AxiosError): Promise<boolean> {
       return false
     }
   }
-  const details = (payload as { error?: { errors?: Array<{ reason?: string }>; status?: string } })?.error
+  const details = (payload as { error?: { errors?: Array<{ reason?: string }>; status?: string } })
+    ?.error
   if (!details) return false
-  if (details.errors?.some((item) => RATE_LIMIT_REASONS.has(String(item.reason ?? '').toLowerCase()))) {
+  if (
+    details.errors?.some((item) => RATE_LIMIT_REASONS.has(String(item.reason ?? '').toLowerCase()))
+  ) {
     return true
   }
   return RATE_LIMIT_REASONS.has(String(details.status ?? '').toLowerCase())
@@ -278,7 +276,12 @@ export async function listChildrenGrouped(
         if (list) list.push(file)
         else
           grouped.set(parent, [
-            { id: file.id, name: file.name, mimeType: file.mimeType, modifiedTime: file.modifiedTime },
+            {
+              id: file.id,
+              name: file.name,
+              mimeType: file.mimeType,
+              modifiedTime: file.modifiedTime,
+            },
           ])
       }
       pageToken = res.data.nextPageToken
@@ -357,6 +360,69 @@ export async function getAboutUser(options: { signal?: AbortSignal } = {}): Prom
     signal: options.signal,
   })
   return res.data.user
+}
+
+// ---------- đồng bộ đa thiết bị (appDataFolder) ----------
+
+export const SYNC_FILE_NAME = 'truyen-drive-sync.json'
+
+/** Endpoint upload nằm ngoài baseURL /drive/v3 — URL tuyệt đối, interceptor vẫn chạy. */
+const UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3/files'
+
+/** Tìm file dữ liệu đồng bộ trong appDataFolder (thư mục ẩn riêng của app). */
+export async function findSyncFile(options: { signal?: AbortSignal } = {}): Promise<string | null> {
+  const res = await http.get<{ files?: Array<{ id: string }> }>('/files', {
+    params: {
+      spaces: 'appDataFolder',
+      q: `name = '${SYNC_FILE_NAME}'`,
+      fields: 'files(id)',
+      pageSize: 5,
+    },
+    signal: options.signal,
+  })
+  return res.data.files?.[0]?.id ?? null
+}
+
+/** Tải nội dung file đồng bộ (chuỗi JSON thô — không cho axios auto-parse). */
+export async function downloadSyncFile(
+  fileId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<string> {
+  const res = await http.get<string>(`/files/${fileId}`, {
+    params: { alt: 'media' },
+    responseType: 'text',
+    transformResponse: [(data: string) => data],
+    signal: options.signal,
+  })
+  return res.data
+}
+
+/**
+ * Ghi nội dung file đồng bộ. Có fileId → PATCH media (1 request); chưa có →
+ * tạo metadata với parents appDataFolder rồi PATCH media (2 request).
+ * Trả về fileId để caller ghi nhớ cho lần ghi sau.
+ */
+export async function uploadSyncFile(
+  fileId: string | null,
+  content: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<string> {
+  const media = {
+    params: { uploadType: 'media' },
+    headers: { 'Content-Type': 'application/json' },
+    signal: options.signal,
+  }
+  if (fileId) {
+    await http.patch(`${UPLOAD_BASE}/${fileId}`, content, media)
+    return fileId
+  }
+  const created = await http.post<{ id: string }>(
+    '/files',
+    { name: SYNC_FILE_NAME, parents: ['appDataFolder'], mimeType: 'application/json' },
+    { signal: options.signal },
+  )
+  await http.patch(`${UPLOAD_BASE}/${created.data.id}`, content, media)
+  return created.data.id
 }
 
 /** Bọc lỗi axios thành message hiển thị được. */

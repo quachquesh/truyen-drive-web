@@ -15,13 +15,17 @@ import {
   type ChapterWithFiles,
 } from '@/lib/scanner'
 import { useStoriesStore } from '@/stores/stories'
+import { useSyncStore } from '@/stores/sync'
 
 const route = useRoute()
 const router = useRouter()
 const storiesStore = useStoriesStore()
+const syncStore = useSyncStore()
 
 const libId = computed(() => (typeof route.params.libId === 'string' ? route.params.libId : ''))
-const storyId = computed(() => (typeof route.params.storyId === 'string' ? route.params.storyId : ''))
+const storyId = computed(() =>
+  typeof route.params.storyId === 'string' ? route.params.storyId : '',
+)
 const chapterId = computed(() =>
   typeof route.params.chapterId === 'string' ? route.params.chapterId : '',
 )
@@ -41,9 +45,7 @@ let saveTimer: number | undefined
 let triedRescan = false
 
 const chapter = computed(() => chapters.value.find((item) => item.id === chapterId.value))
-const chapterIndex = computed(() =>
-  chapters.value.findIndex((item) => item.id === chapterId.value),
-)
+const chapterIndex = computed(() => chapters.value.findIndex((item) => item.id === chapterId.value))
 const prevChapter = computed(() => chapters.value[chapterIndex.value - 1])
 const nextChapter = computed(() => chapters.value[chapterIndex.value + 1])
 
@@ -134,6 +136,7 @@ async function recordOpenChapter(): Promise<void> {
     scrollPct: 0,
     updatedAt: Date.now(),
   })
+  syncStore.schedulePush()
 }
 
 function onScroll(): void {
@@ -162,6 +165,7 @@ async function saveProgress(): Promise<void> {
     scrollPct,
     updatedAt: Date.now(),
   })
+  syncStore.schedulePush()
 }
 
 function goToChapter(target: ChapterRef | undefined): void {
@@ -222,54 +226,54 @@ watch(chapterId, () => {
     <!-- Toolbar tự ẩn khi cuộn xuống -->
     <NConfigProvider :theme="darkTheme" class="toolbar-provider">
       <div class="reader-toolbar" :class="{ hidden: !toolbarVisible }">
-      <NSpace align="center" size="small">
-        <NButton quaternary size="small" @click="backToChapters">← Danh sách</NButton>
-        <NText strong style="font-size: 14px">{{ chapter?.name ?? '...' }}</NText>
-        <NTag v-if="chapterIndex >= 0" size="small" :bordered="false">
-          {{ chapterIndex + 1 }}/{{ chapters.length }}
-        </NTag>
-        <NSpin v-if="pdfLoading" :size="14" />
-        <NSpace v-if="hasPdfOption" size="small" :wrap="false">
+        <NSpace align="center" size="small">
+          <NButton quaternary size="small" @click="backToChapters">← Danh sách</NButton>
+          <NText strong style="font-size: 14px">{{ chapter?.name ?? '...' }}</NText>
+          <NTag v-if="chapterIndex >= 0" size="small" :bordered="false">
+            {{ chapterIndex + 1 }}/{{ chapters.length }}
+          </NTag>
+          <NSpin v-if="pdfLoading" :size="14" />
+          <NSpace v-if="hasPdfOption" size="small" :wrap="false">
+            <NButton
+              size="tiny"
+              secondary
+              :type="readerMode === 'images' ? 'primary' : 'default'"
+              title="Đọc từng ảnh (lazy-load nhanh)"
+              @click="readerMode = 'images'"
+            >
+              🖼 Ảnh
+            </NButton>
+            <NButton
+              size="tiny"
+              secondary
+              :type="readerMode === 'pdf' ? 'primary' : 'default'"
+              title="Đọc file PDF trọn bộ của chapter"
+              @click="readerMode = 'pdf'"
+            >
+              📄 PDF
+            </NButton>
+          </NSpace>
+        </NSpace>
+        <NSpace size="small">
           <NButton
-            size="tiny"
+            size="small"
             secondary
-            :type="readerMode === 'images' ? 'primary' : 'default'"
-            title="Đọc từng ảnh (lazy-load nhanh)"
-            @click="readerMode = 'images'"
+            :disabled="!prevChapter"
+            title="Chap trước (←)"
+            @click="goToChapter(prevChapter)"
           >
-            🖼 Ảnh
+            ‹ Trước
           </NButton>
           <NButton
-            size="tiny"
+            size="small"
             secondary
-            :type="readerMode === 'pdf' ? 'primary' : 'default'"
-            title="Đọc file PDF trọn bộ của chapter"
-            @click="readerMode = 'pdf'"
+            :disabled="!nextChapter"
+            title="Chap sau (→)"
+            @click="goToChapter(nextChapter)"
           >
-            📄 PDF
+            Sau ›
           </NButton>
         </NSpace>
-      </NSpace>
-      <NSpace size="small">
-        <NButton
-          size="small"
-          secondary
-          :disabled="!prevChapter"
-          title="Chap trước (←)"
-          @click="goToChapter(prevChapter)"
-        >
-          ‹ Trước
-        </NButton>
-        <NButton
-          size="small"
-          secondary
-          :disabled="!nextChapter"
-          title="Chap sau (→)"
-          @click="goToChapter(nextChapter)"
-        >
-          Sau ›
-        </NButton>
-      </NSpace>
       </div>
     </NConfigProvider>
 
@@ -337,12 +341,7 @@ watch(chapterId, () => {
       <NCard class="end-card" :bordered="false">
         <NSpace vertical align="center" size="small">
           <NText depth="3">Hết {{ chapterFiles.name }}</NText>
-          <NButton
-            v-if="nextChapter"
-            type="primary"
-            size="large"
-            @click="goToChapter(nextChapter)"
-          >
+          <NButton v-if="nextChapter" type="primary" size="large" @click="goToChapter(nextChapter)">
             Chap tiếp: {{ nextChapter.name }}
           </NButton>
           <NText v-else depth="3">Bạn đã đọc hết truyện 🎉</NText>

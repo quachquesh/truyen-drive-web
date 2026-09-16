@@ -15,6 +15,7 @@ Web app đọc truyện tranh từ kho Google Drive **riêng tư** — chỉ fro
 - **Đọc ảnh hoặc PDF**: ảnh lazy-load + prefetch; PDF render bằng pdf.js theo cuộn. Chapter có cả ảnh lẫn PDF "trọn bộ" → nút chuyển **🖼 Ảnh / 📄 PDF** trên toolbar (nhớ lựa chọn)
 - **Cache IndexedDB**: danh sách truyện/chapter, danh sách file chapter, blob ảnh/PDF, tiến trình đọc — đọc lại không tốn mạng. Có nút làm mới / xóa cache từng loại trong Cài đặt; tự backoff khi Drive trả 403/429 rate-limit
 - Lưu **tiến trình đọc**, khôi phục vị trí cuộn, nút "Tiếp tục đọc"
+- **Đồng bộ đa thiết bị qua Google Drive** (appDataFolder — thư mục ẩn riêng của app, không hiện trong My Drive): tiến độ đọc, danh sách kho + kho đang chọn, đánh dấu story/nhóm được tự động tải mỗi khi mở trang và tự đẩy lên Drive sau mỗi thay đổi (~15s debounce). Hợp nhất theo last-write-wins; xóa kho/bỏ đánh dấu có tombstone nên không "hồi sinh" từ máy khác. VD: đọc đến chapter 15 trên điện thoại → mở laptop thấy ngay nút "Tiếp tục đọc: chapter 15". Tắt/bật trong **Cài đặt → Đồng bộ đa thiết bị**. Dữ liệu gắn với tài khoản Google — mỗi tài khoản một bộ riêng.
 - Giao diện Naive UI, dark/light mode, tiếng Việt, tìm kiếm không cần dấu
 
 ## Chạy dự án
@@ -34,7 +35,7 @@ Các lệnh khác: `bun run test:unit`, `bun run build`, `bun run preview`, `bun
 3. **APIs & Services → OAuth consent screen**:
    - User type: **External** → Create
    - App name tuỳ ý, email hỗ trợ của bạn
-   - **Scopes**: thêm `https://www.googleapis.com/auth/drive.readonly`
+   - **Scopes**: thêm `https://www.googleapis.com/auth/drive.readonly` và `https://www.googleapis.com/auth/drive.appdata` (scope thứ 2 để lưu dữ liệu đồng bộ đa thiết bị)
    - **Test users**: thêm Gmail của bạn và những người được đọc (chế độ Testing cho tối đa 100 user, đủ dùng cá nhân — không cần verify app)
    - Publish mode **Testing** là dùng được ngay
 4. **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
@@ -56,6 +57,9 @@ Các lệnh khác: `bun run test:unit`, `bun run build`, `bun run preview`, `bun
 - Chapter có thể nằm trực tiếp trong truyện hoặc nhóm trong folder trung gian (`0-30/`...) — lồng bao nhiêu tầng cũng được
 
 ## Khắc phục sự cố
+
+### Sau khi cập nhật lên bản có đồng bộ, phải đăng nhập lại?
+Bản đồng bộ thêm quyền mới `drive.appdata` (ghi dữ liệu của app vào Drive). Ai đã đăng nhập từ bản cũ sẽ bị đưa về trang đăng nhập **đúng 1 lần** — bấm nút rồi đồng ý quyền mới trong popup Google là xong.
 
 ### F5 lại ra trang đăng nhập?
 Token không lưu trên máy nên mỗi lần mở trang app phải xin lại token từ Google (silent). Nếu trình duyệt chặn bước silent, app sẽ đưa bạn về trang đăng nhập — bấm nút **1 click là vào lại** (không phải cấp quyền lại, Google tự chọn đúng tài khoản). Để silent chạy được (vào thẳng không cần bấm):
@@ -93,12 +97,13 @@ src/
 │   ├── driveApi.ts     # axios + interceptors (401 → refresh token, 403/429/5xx → backoff)
 │   │                   # + listChildrenGrouped: batch nhiều cha 1 query (chống N+1)
 │   ├── scanner.ts      # quét BFS theo tầng chỉ-list-folder + ensureChapterFiles lazy
-│   ├── db.ts           # IndexedDB (idb): libraries / cache / blobs / progress
+│   ├── db.ts           # IndexedDB (idb): libraries / cache / blobs / progress / folderTypes / tombstones
+│   ├── sync.ts         # đồng bộ đa thiết bị: snapshot → merge last-write-wins → apply
 │   ├── blobCache.ts    # blob ảnh-PDF: IDB trước, miss thì tải Drive
 │   ├── naturalSort.ts  # sort "tự nhiên" (2 < 10)
 │   ├── concurrency.ts  # semaphore request song song
 │   └── folderUrl.ts    # parse URL/ID folder Drive
-├── stores/             # Pinia: auth / library / stories
+├── stores/             # Pinia: auth / library / stories / sync
 ├── pages/              # Login / Library / Folder / Story / Reader / Settings
 └── components/         # AppHeader, LibraryModal, StoryCard, ReaderImage, PdfPage, PdfReader
 ```

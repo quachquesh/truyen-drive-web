@@ -6,7 +6,13 @@
  * session Google thì token được cấp lại tự động, không cần bấm nút.
  */
 
-const SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
+/**
+ * readonly: đọc kho truyện (list/tải file).
+ * appdata: đọc/ghi file dữ liệu đồng bộ trong appDataFolder (ẩn, riêng của app).
+ * Lưu ý: user đã consent scope cũ phải đăng nhập lại 1 lần để cấp thêm appdata.
+ */
+const SCOPE =
+  'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.appdata'
 const GIS_SRC = 'https://accounts.google.com/gsi/client'
 const SILENT_TIMEOUT_MS = 15_000
 

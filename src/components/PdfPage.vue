@@ -62,7 +62,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="el" class="pdf-page" :style="{ aspectRatio: aspectRatio }">
     <canvas v-show="state === 'done' || state === 'rendering'" ref="canvasEl" />
-    <div v-if="state !== 'done'" class="pdf-overlay"> Trang {{ pageNumber }} </div>
+    <div v-if="state !== 'done'" class="pdf-overlay">Trang {{ pageNumber }}</div>
   </div>
 </template>
 

@@ -1,100 +1,111 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import { NAlert, NButton, NEmpty, NGrid, NGridItem, NInput, NSelect, NSpace, NSpin, NText } from "naive-ui";
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  NAlert,
+  NButton,
+  NEmpty,
+  NGrid,
+  NGridItem,
+  NInput,
+  NSelect,
+  NSpace,
+  NSpin,
+  NText,
+} from 'naive-ui'
 
-import StoryCard from "@/components/StoryCard.vue";
-import { useLibraryStore } from "@/stores/library";
-import { useStoriesStore } from "@/stores/stories";
-import { sortStories, type StorySortMode } from "@/lib/storySort";
+import StoryCard from '@/components/StoryCard.vue'
+import { useLibraryStore } from '@/stores/library'
+import { useStoriesStore } from '@/stores/stories'
+import { sortStories, type StorySortMode } from '@/lib/storySort'
 
-const route = useRoute();
-const router = useRouter();
-const libraryStore = useLibraryStore();
-const storiesStore = useStoriesStore();
+const route = useRoute()
+const router = useRouter()
+const libraryStore = useLibraryStore()
+const storiesStore = useStoriesStore()
 
-const search = ref("");
+const search = ref('')
 
 /** Kiểu sắp xếp danh sách truyện — nhớ lựa chọn của user */
-const SORT_KEY = "tdw-story-sort";
+const SORT_KEY = 'tdw-story-sort'
 const sortMode = ref<StorySortMode>(
-  localStorage.getItem(SORT_KEY) === "modified" ? "modified" : "name",
-);
+  localStorage.getItem(SORT_KEY) === 'modified' ? 'modified' : 'name',
+)
 const sortOptions = [
-  { label: "Tên A→Z", value: "name" },
-  { label: "Mới cập nhật", value: "modified" },
-];
+  { label: 'Tên A→Z', value: 'name' },
+  { label: 'Mới cập nhật', value: 'modified' },
+]
 
 watch(sortMode, (mode) => {
-  localStorage.setItem(SORT_KEY, mode);
-});
+  localStorage.setItem(SORT_KEY, mode)
+})
 
 /** Search không phân biệt dấu (gõ "khong dau" vẫn ra "không dấu") */
 function deaccent(value: string): string {
   return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d")
-    .replace(/Đ/g, "D")
-    .toLowerCase();
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
 }
 
 const filteredStories = computed(() => {
-  const query = deaccent(search.value.trim());
+  const query = deaccent(search.value.trim())
   const base = query
     ? storiesStore.stories.filter((story) => deaccent(story.name).includes(query))
-    : storiesStore.stories;
-  return sortStories(base, sortMode.value);
-});
+    : storiesStore.stories
+  return sortStories(base, sortMode.value)
+})
 
 const scanningAny = computed(() =>
   storiesStore.stories.some((story) => storiesStore.scanning[story.id]),
-);
+)
 
-const libId = computed(() => (typeof route.params.libId === "string" ? route.params.libId : ""));
+const libId = computed(() => (typeof route.params.libId === 'string' ? route.params.libId : ''))
 
 onMounted(async () => {
-  await libraryStore.load();
+  await libraryStore.load()
 
-  if (route.name === "home") {
-    const target = libraryStore.activeId || libraryStore.libraries[0]?.id;
+  if (route.name === 'home') {
+    const target = libraryStore.activeId || libraryStore.libraries[0]?.id
     if (target) {
-      await router.replace({ name: "library", params: { libId: target } });
-      return;
+      await router.replace({ name: 'library', params: { libId: target } })
+      return
     }
     // chưa có kho nào — hiển thị empty state
   }
   if (libId.value) {
-    libraryStore.setActive(libId.value);
-    void storiesStore.openLibrary(libId.value);
+    libraryStore.setActive(libId.value)
+    void storiesStore.openLibrary(libId.value)
   }
-});
+})
 
 // Chuyển kho từ dropdown (URL đổi) → mở kho mới
 watch(libId, (id) => {
-  if (id && route.name === "library") {
-    libraryStore.setActive(id);
-    void storiesStore.openLibrary(id);
+  if (id && route.name === 'library') {
+    libraryStore.setActive(id)
+    void storiesStore.openLibrary(id)
   }
-});
+})
 
 /** Card đã đánh dấu → vào chapter; chưa đánh dấu → xem nội dung để quyết định */
 function onCardClick(story: { id: string; name: string }): void {
   if (storiesStore.marks[story.id]) {
-    void router.push({ name: "story", params: { libId: libId.value, storyId: story.id } });
-    return;
+    void router.push({ name: 'story', params: { libId: libId.value, storyId: story.id } })
+    return
   }
   void router.push({
-    name: "folder",
+    name: 'folder',
     params: { libId: libId.value, folderId: story.id },
     query: { name: story.name },
-  });
+  })
 }
 
 /** User xác nhận đây là truyện → đánh dấu + quét + vào danh sách chapter */
 async function markAndRead(story: { id: string; name: string }): Promise<void> {
-  await storiesStore.markAsStory(story.id);
-  void router.push({ name: "story", params: { libId: libId.value, storyId: story.id } });
+  await storiesStore.markAsStory(story.id)
+  void router.push({ name: 'story', params: { libId: libId.value, storyId: story.id } })
 }
 </script>
 

@@ -1,32 +1,32 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { NButton, NCard, NSpin, NTag, NText, NTooltip } from "naive-ui";
+import { computed } from 'vue'
+import { NButton, NCard, NSpin, NTag, NText, NTooltip } from 'naive-ui'
 
-import { useStoriesStore } from "@/stores/stories";
-import type { StorySummary } from "@/lib/scanner";
+import { useStoriesStore } from '@/stores/stories'
+import type { StorySummary } from '@/lib/scanner'
 
-const props = defineProps<{ story: StorySummary }>();
-const storiesStore = useStoriesStore();
+const props = defineProps<{ story: StorySummary }>()
+const storiesStore = useStoriesStore()
 
 const emit = defineEmits<{
-  openFolder: [story: StorySummary];
-  markStory: [story: StorySummary];
-}>();
+  openFolder: [story: StorySummary]
+  markStory: [story: StorySummary]
+}>()
 
-const marked = computed(() => Boolean(storiesStore.marks[props.story.id]));
+const marked = computed(() => Boolean(storiesStore.marks[props.story.id]))
 
 /** dd/MM/yyyy từ modifiedTime của Drive; rỗng nếu không có (cache cũ) hoặc lỗi parse */
 const modifiedText = computed(() => {
-  const iso = props.story.modifiedTime;
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
-});
+  const iso = props.story.modifiedTime
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
+})
 </script>
 
 <template>

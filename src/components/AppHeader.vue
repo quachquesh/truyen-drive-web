@@ -57,11 +57,7 @@ const activeName = computed(() => libraryStore.active?.name ?? 'Chọn kho')
         <span class="brand-text">Truyện Drive</span>
       </RouterLink>
 
-      <NDropdown
-        trigger="click"
-        :options="libraryOptions"
-        @select="onLibrarySelect"
-      >
+      <NDropdown trigger="click" :options="libraryOptions" @select="onLibrarySelect">
         <NButton quaternary size="small">
           {{ activeName }}
           <template #icon>
@@ -78,19 +74,20 @@ const activeName = computed(() => libraryStore.active?.name ?? 'Chọn kho')
         </template>
       </NButton>
 
-      <NButton quaternary circle size="small" title="Cài đặt" @click="router.push({ name: 'settings' })">
+      <NButton
+        quaternary
+        circle
+        size="small"
+        title="Cài đặt"
+        @click="router.push({ name: 'settings' })"
+      >
         <template #icon>
           <NIcon>⚙️</NIcon>
         </template>
       </NButton>
 
       <NDropdown trigger="click" :options="userOptions" @select="onUserSelect">
-        <NAvatar
-          round
-          size="small"
-          :src="auth.user?.photoLink"
-          style="cursor: pointer"
-        >
+        <NAvatar round size="small" :src="auth.user?.photoLink" style="cursor: pointer">
           {{ auth.user ? auth.user.emailAddress.charAt(0).toUpperCase() : '?' }}
         </NAvatar>
       </NDropdown>

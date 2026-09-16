@@ -3,7 +3,12 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { NButton, NSpin, NText } from 'naive-ui'
 
 import { ensureFileBlob } from '@/lib/blobCache'
-import { DriveFileBlockedError, getFreshThumbnail, sizedThumbnail, toErrorMessage } from '@/lib/driveApi'
+import {
+  DriveFileBlockedError,
+  getFreshThumbnail,
+  sizedThumbnail,
+  toErrorMessage,
+} from '@/lib/driveApi'
 import type { ChapterFile } from '@/lib/scanner'
 
 const props = defineProps<{ file: ChapterFile; storyKey: string }>()

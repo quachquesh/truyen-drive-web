@@ -68,7 +68,13 @@ body {
   padding: 0;
   height: 100%;
   font-family:
-    'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    'Inter',
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
 }
 
 #app {

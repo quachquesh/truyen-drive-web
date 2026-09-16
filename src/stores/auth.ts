@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { acceptHMRUpdate, defineStore } from 'pinia'
 
 import { getAboutUser, type DriveUser } from '@/lib/driveApi'
 import {
@@ -10,6 +10,7 @@ import {
   writeLoginHint,
 } from '@/lib/googleAuth'
 import * as tokenBox from '@/lib/tokenBox'
+import { useSyncStore } from './sync'
 
 /**
  * Token Google chỉ giữ trong memory (tokenBox). Refresh trang → mất token →
@@ -46,6 +47,8 @@ export const useAuthStore = defineStore('auth', {
       this.authed = true
       this.loginError = ''
       void this.fetchUser()
+      // Đăng nhập xong → kéo dữ liệu đồng bộ từ Drive (tiến độ, kho, đánh dấu)
+      void useSyncStore().syncNow()
     },
 
     async fetchUser(): Promise<void> {
@@ -124,6 +127,11 @@ export const useAuthStore = defineStore('auth', {
       this.authed = false
       this.user = null
       this.booted = false
+      useSyncStore().reset()
     },
   },
 })
+
+if (import.meta.hot) {
+  import.meta.hot.accept(acceptHMRUpdate(useAuthStore, import.meta.hot))
+}

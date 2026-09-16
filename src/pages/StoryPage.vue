@@ -27,7 +27,9 @@ const storiesStore = useStoriesStore()
 const dialog = useDialog()
 
 const libId = computed(() => (typeof route.params.libId === 'string' ? route.params.libId : ''))
-const storyId = computed(() => (typeof route.params.storyId === 'string' ? route.params.storyId : ''))
+const storyId = computed(() =>
+  typeof route.params.storyId === 'string' ? route.params.storyId : '',
+)
 const fromFolderId = computed(() =>
   typeof route.query.fromFolderId === 'string' ? route.query.fromFolderId : '',
 )
@@ -136,7 +138,9 @@ function markGroup(chapter: ChapterRef): void {
 <template>
   <div class="story-page">
     <div class="toolbar">
-      <NButton quaternary size="small" @click="backToPrev">← {{ fromFolderId ? 'Thư mục' : 'Kho truyện' }}</NButton>
+      <NButton quaternary size="small" @click="backToPrev"
+        >← {{ fromFolderId ? 'Thư mục' : 'Kho truyện' }}</NButton
+      >
       <h2 class="story-title">{{ storyName }}</h2>
       <NTag v-if="chapters.length" size="small" type="info">{{ chapters.length }} chap</NTag>
     </div>
@@ -153,20 +157,26 @@ function markGroup(chapter: ChapterRef): void {
     </NAlert>
 
     <NSpace v-if="!error" align="center" size="small" style="margin-bottom: 12px">
-      <NInput v-model:value="search" placeholder="Tìm chapter..." clearable size="small" style="width: 220px" />
+      <NInput
+        v-model:value="search"
+        placeholder="Tìm chapter..."
+        clearable
+        size="small"
+        style="width: 220px"
+      />
       <NText depth="3" style="font-size: 13px">Mới nhất trước</NText>
       <NSwitch v-model:value="newestFirst" size="small" />
       <div style="flex: 1" />
-      <NButton
-        v-if="progress"
-        size="small"
-        type="primary"
-        secondary
-        @click="continueReading"
-      >
+      <NButton v-if="progress" size="small" type="primary" secondary @click="continueReading">
         ▶ Tiếp tục: {{ progress.chapterName }}
       </NButton>
-      <NButton size="small" secondary :loading="loading" title="Quét lại chapter từ Drive" @click="load(true)">
+      <NButton
+        size="small"
+        secondary
+        :loading="loading"
+        title="Quét lại chapter từ Drive"
+        @click="load(true)"
+      >
         ↻ Làm mới
       </NButton>
       <NButton
@@ -184,7 +194,11 @@ function markGroup(chapter: ChapterRef): void {
       <NText depth="3">Đang quét chapter...</NText>
     </div>
 
-    <NEmpty v-else-if="!filteredChapters.length" description="Không có chapter" style="margin-top: 60px" />
+    <NEmpty
+      v-else-if="!filteredChapters.length"
+      description="Không có chapter"
+      style="margin-top: 60px"
+    />
 
     <NVirtualList
       v-else

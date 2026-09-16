@@ -1,17 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  NAlert,
-  NButton,
-  NEmpty,
-  NGrid,
-  NGridItem,
-  NInput,
-  NSpace,
-  NSpin,
-  NText,
-} from 'naive-ui'
+import { NAlert, NButton, NEmpty, NGrid, NGridItem, NInput, NSpace, NSpin, NText } from 'naive-ui'
 
 import StoryCard from '@/components/StoryCard.vue'
 import { getFileMeta, listChildrenGrouped, toErrorMessage } from '@/lib/driveApi'
@@ -65,7 +55,9 @@ async function load(): Promise<void> {
     // Chỉ cần folder con (ảnh/file lẻ bị bỏ qua) — KHÔNG quét chapter gì ở đây,
     // user tự quyết định từng folder bên dưới
     const grouped = await listChildrenGrouped([folderId.value])
-    const items = (grouped.get(folderId.value) ?? []).filter((item) => item.mimeType === FOLDER_MIME)
+    const items = (grouped.get(folderId.value) ?? []).filter(
+      (item) => item.mimeType === FOLDER_MIME,
+    )
     children.value = naturalSort(
       items.map((item) => ({ id: item.id, name: item.name, modifiedTime: item.modifiedTime })),
       (child) => child.name,
@@ -135,21 +127,32 @@ watch(folderId, () => {
         <NText strong class="folder-title">{{ folderName || 'Thư mục' }}</NText>
       </NSpace>
       <NSpace size="small">
-        <NInput v-model:value="search" placeholder="Tìm..." clearable size="small" style="width: 200px" />
+        <NInput
+          v-model:value="search"
+          placeholder="Tìm..."
+          clearable
+          size="small"
+          style="width: 200px"
+        />
         <NButton size="small" secondary :loading="loading" @click="load()">↻ Làm mới</NButton>
       </NSpace>
     </div>
 
     <!-- Quyết định của user: folder này là truyện hay list truyện -->
-    <NAlert v-if="!marked && !groupMarked" type="info" :bordered="false" style="margin-bottom: 14px">
+    <NAlert
+      v-if="!marked && !groupMarked"
+      type="info"
+      :bordered="false"
+      style="margin-bottom: 14px"
+    >
       <NSpace align="center" size="small">
-        <span>
-          Thư mục này là <strong>truyện</strong> hay <strong>danh sách truyện</strong>?
-        </span>
+        <span> Thư mục này là <strong>truyện</strong> hay <strong>danh sách truyện</strong>? </span>
         <NButton size="small" type="primary" secondary @click="markCurrentAsStory">
           📖 Đây là truyện — đọc ngay
         </NButton>
-        <NText depth="3" style="font-size: 12px">(là danh sách thì bấm vào từng truyện bên dưới)</NText>
+        <NText depth="3" style="font-size: 12px"
+          >(là danh sách thì bấm vào từng truyện bên dưới)</NText
+        >
       </NSpace>
     </NAlert>
 
@@ -163,14 +166,25 @@ watch(folderId, () => {
       </NSpace>
     </NAlert>
 
-    <NAlert v-if="error" type="error" :title="error" style="margin-bottom: 12px" closable @close="error = ''" />
+    <NAlert
+      v-if="error"
+      type="error"
+      :title="error"
+      style="margin-bottom: 12px"
+      closable
+      @close="error = ''"
+    />
 
     <div v-if="loading && !children.length" class="center-msg">
       <NSpin />
       <NText depth="3">Đang tải...</NText>
     </div>
 
-    <NEmpty v-else-if="!filteredChildren.length" description="Thư mục trống" style="margin-top: 60px" />
+    <NEmpty
+      v-else-if="!filteredChildren.length"
+      description="Thư mục trống"
+      style="margin-top: 60px"
+    />
 
     <NGrid v-else cols="1 s:2 m:3 l:4 xl:5" responsive="screen" :x-gap="12" :y-gap="12">
       <NGridItem v-for="child in filteredChildren" :key="child.id">

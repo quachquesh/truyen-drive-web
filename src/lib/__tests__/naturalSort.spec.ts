@@ -25,7 +25,10 @@ describe('naturalSort', () => {
   })
 
   it('naturalSort không đổi mảng gốc và map đúng theo nameOf', () => {
-    const items = [{ id: '1', name: 'b10' }, { id: '2', name: 'b2' }]
+    const items = [
+      { id: '1', name: 'b10' },
+      { id: '2', name: 'b2' },
+    ]
     const sorted = naturalSort(items, (item) => item.name)
     expect(sorted.map((item) => item.id)).toEqual(['2', '1'])
     expect(items.map((item) => item.id)).toEqual(['1', '2'])

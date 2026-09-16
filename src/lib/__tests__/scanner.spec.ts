@@ -51,10 +51,7 @@ const queriedParents = new Set<string>()
 
 vi.mock('../driveApi', () => ({
   listChildrenGrouped: vi.fn<
-    (
-      parentIds: string[],
-      options?: { foldersOnly?: boolean },
-    ) => Promise<Map<string, DriveItem[]>>
+    (parentIds: string[], options?: { foldersOnly?: boolean }) => Promise<Map<string, DriveItem[]>>
   >(async (parentIds, options) => {
     const map = new Map<string, DriveItem[]>()
     for (const id of parentIds) {
@@ -73,9 +70,9 @@ vi.mock('../driveApi', () => ({
 // Giả lập IndexedDB bằng Map trong memory (mirror shape CacheRecord {key, data, fetchedAt})
 const cacheStore = new Map<string, { key: string; data: unknown; fetchedAt: number }>()
 vi.mock('../db', () => ({
-  getCache: vi.fn<(key: string) => Promise<{ key: string; data: unknown; fetchedAt: number } | undefined>>(
-    async (key: string) => cacheStore.get(key),
-  ),
+  getCache: vi.fn<
+    (key: string) => Promise<{ key: string; data: unknown; fetchedAt: number } | undefined>
+  >(async (key: string) => cacheStore.get(key)),
   setCache: vi.fn<(key: string, data: unknown) => Promise<void>>(async (key, data) => {
     cacheStore.set(key, { key, data, fetchedAt: Date.now() })
   }),
@@ -131,7 +128,14 @@ describe('scanStories / scanStory (1 cấp tự động + đánh dấu nhóm)', 
       ],
       { groupMarks: new Set(['f-0-30', 'g1', 'g1a']) },
     )
-    expect(results.get('root')?.map((chapter) => chapter.name)).toEqual(['0', '2', '5', '10', '31', '32'])
+    expect(results.get('root')?.map((chapter) => chapter.name)).toEqual([
+      '0',
+      '2',
+      '5',
+      '10',
+      '31',
+      '32',
+    ])
     expect(results.get('deep')?.map((chapter) => chapter.name)).toEqual(['5', '9'])
   })
 

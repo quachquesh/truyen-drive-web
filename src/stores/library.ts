@@ -1,21 +1,42 @@
-import { defineStore } from 'pinia'
+import { acceptHMRUpdate, defineStore } from 'pinia'
 
 import { listChildren } from '@/lib/driveApi'
 import {
   deleteLibrary as dbDeleteLibrary,
   getLibraries,
   putLibrary,
+  putTombstone,
   type LibraryConfig,
 } from '@/lib/db'
 import { parseFolderId } from '@/lib/folderUrl'
+import { libTombstoneKey } from '@/lib/sync'
+import { useSyncStore } from './sync'
 
 const ACTIVE_KEY = 'tdw-active-library'
+/** Thời điểm đổi kho đang chọn — mốc last-write-wins khi đồng bộ đa thiết bị */
+const ACTIVE_AT_KEY = 'tdw-active-updated-at'
 
 function readActiveId(): string {
   try {
     return localStorage.getItem(ACTIVE_KEY) ?? ''
   } catch {
     return ''
+  }
+}
+
+export function readActiveUpdatedAt(): number {
+  try {
+    return Number(localStorage.getItem(ACTIVE_AT_KEY)) || 0
+  } catch {
+    return 0
+  }
+}
+
+function writeActiveUpdatedAt(): void {
+  try {
+    localStorage.setItem(ACTIVE_AT_KEY, String(Date.now()))
+  } catch {
+    // private mode
   }
 }
 
@@ -72,37 +93,53 @@ export const useLibraryStore = defineStore('library', {
         name: name.trim() || 'Kho truyện',
         folderId,
         createdAt: Date.now(),
+        updatedAt: Date.now(),
       }
       await putLibrary(lib)
       this.libraries = [...this.libraries, lib].sort((a, b) => a.createdAt - b.createdAt)
       if (!this.activeId) this.setActive(lib.id)
+      useSyncStore().schedulePush()
       return lib
     },
 
     async remove(id: string): Promise<void> {
+      const lib = this.libraries.find((item) => item.id === id)
+      if (!lib) return
+      // Tombstone để máy khác không "hồi sinh" kho đã xóa khi đồng bộ
+      await putTombstone(libTombstoneKey(lib.folderId), Date.now())
       await dbDeleteLibrary(id)
-      this.libraries = this.libraries.filter((lib) => lib.id !== id)
+      this.libraries = this.libraries.filter((item) => item.id !== id)
       if (this.activeId === id) {
         const next = this.libraries[0]
         this.setActive(next?.id ?? '')
       }
+      useSyncStore().schedulePush()
     },
 
     async rename(id: string, name: string): Promise<void> {
       const lib = this.libraries.find((item) => item.id === id)
       if (!lib) return
       lib.name = name.trim() || lib.name
+      lib.updatedAt = Date.now()
       await putLibrary(lib)
+      useSyncStore().schedulePush()
     },
 
     setActive(id: string): void {
+      if (id === this.activeId) return
       this.activeId = id
+      writeActiveUpdatedAt()
       try {
         if (id) localStorage.setItem(ACTIVE_KEY, id)
         else localStorage.removeItem(ACTIVE_KEY)
       } catch {
         // private mode — bỏ qua
       }
+      useSyncStore().schedulePush()
     },
   },
 })
+
+if (import.meta.hot) {
+  import.meta.hot.accept(acceptHMRUpdate(useLibraryStore, import.meta.hot))
+}

@@ -25,9 +25,7 @@ async function login(): Promise<void> {
       <div class="login-body">
         <div class="logo">📚</div>
         <h1 class="title">Truyện Drive</h1>
-        <NText depth="2">
-          Đọc truyện từ kho Google Drive riêng tư của bạn
-        </NText>
+        <NText depth="2"> Đọc truyện từ kho Google Drive riêng tư của bạn </NText>
 
         <NAlert
           v-if="!auth.clientConfigured"
@@ -36,8 +34,8 @@ async function login(): Promise<void> {
           style="margin-top: 20px; text-align: left"
         >
           Tạo file <code>.env.local</code> với
-          <code>VITE_GOOGLE_CLIENT_ID=&lt;client_id&gt;</code> rồi chạy lại dev server.
-          Xem hướng dẫn trong README.md.
+          <code>VITE_GOOGLE_CLIENT_ID=&lt;client_id&gt;</code> rồi chạy lại dev server. Xem hướng
+          dẫn trong README.md.
         </NAlert>
 
         <NAlert
@@ -59,8 +57,8 @@ async function login(): Promise<void> {
           :bordered="false"
           style="margin-top: 20px; text-align: left"
         >
-          Phiên đăng nhập cần khôi phục — bấm nút bên dưới để vào lại,
-          Google <strong>không hỏi cấp quyền lại</strong> (đã cấp trước đó).
+          Phiên đăng nhập cần khôi phục — bấm nút bên dưới để vào lại, Google
+          <strong>không hỏi cấp quyền lại</strong> (đã cấp trước đó).
         </NAlert>
 
         <NButton
@@ -81,8 +79,8 @@ async function login(): Promise<void> {
         </NSpin>
 
         <NText depth="3" style="font-size: 12px; margin-top: 16px; display: block">
-          Chỉ tài khoản được chia sẻ quyền truy cập kho mới xem được nội dung.
-          Token không lưu trên máy — mỗi lần mở trang sẽ xác thực lại.
+          Chỉ tài khoản được chia sẻ quyền truy cập kho mới xem được nội dung. Token không lưu trên
+          máy — mỗi lần mở trang sẽ xác thực lại.
         </NText>
       </div>
     </NCard>

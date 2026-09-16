@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { useRouter } from "vue-router";
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   NAlert,
   NButton,
@@ -15,88 +15,88 @@ import {
   NText,
   useDialog,
   useMessage,
-} from "naive-ui";
+} from 'naive-ui'
 
-import { useLibraryStore } from "@/stores/library";
-import { toErrorMessage } from "@/lib/driveApi";
-import DriveFolderPicker from "@/components/DriveFolderPicker.vue";
+import { useLibraryStore } from '@/stores/library'
+import { toErrorMessage } from '@/lib/driveApi'
+import DriveFolderPicker from '@/components/DriveFolderPicker.vue'
 
-const router = useRouter();
-const message = useMessage();
-const dialog = useDialog();
-const libraryStore = useLibraryStore();
+const router = useRouter()
+const message = useMessage()
+const dialog = useDialog()
+const libraryStore = useLibraryStore()
 
-const newName = ref("");
-const newFolder = ref("");
-const adding = ref(false);
-const addError = ref("");
+const newName = ref('')
+const newFolder = ref('')
+const adding = ref(false)
+const addError = ref('')
 /** true → hiện form dán URL/ID thay vì duyệt Drive (folder share link-only không hiện trong list) */
-const showManual = ref(false);
+const showManual = ref(false)
 
-const editingId = ref("");
-const editingName = ref("");
+const editingId = ref('')
+const editingName = ref('')
 
 /** Chọn folder từ picker → thêm kho ngay (tên kho = tên folder nếu chưa đặt tên) */
 async function onPick(folder: { id: string; name: string }): Promise<void> {
-  if (adding.value) return;
-  newFolder.value = folder.id;
-  if (!newName.value.trim()) newName.value = folder.name;
-  await addLibrary();
+  if (adding.value) return
+  newFolder.value = folder.id
+  if (!newName.value.trim()) newName.value = folder.name
+  await addLibrary()
 }
 
 async function addLibrary(): Promise<void> {
-  addError.value = "";
+  addError.value = ''
   if (!newFolder.value.trim()) {
-    addError.value = "Dán URL hoặc ID folder Google Drive của kho";
-    return;
+    addError.value = 'Dán URL hoặc ID folder Google Drive của kho'
+    return
   }
-  adding.value = true;
+  adding.value = true
   try {
-    const lib = await libraryStore.add(newName.value, newFolder.value);
-    message.success(`Đã thêm kho "${lib.name}"`);
-    newName.value = "";
-    newFolder.value = "";
-    libraryStore.closeManager();
+    const lib = await libraryStore.add(newName.value, newFolder.value)
+    message.success(`Đã thêm kho "${lib.name}"`)
+    newName.value = ''
+    newFolder.value = ''
+    libraryStore.closeManager()
     // Từ trang chủ / trang kho → mở luôn kho vừa thêm
-    const routeName = router.currentRoute.value.name;
-    if (routeName === "home" || routeName === "library") {
-      await router.push({ name: "library", params: { libId: lib.id } });
+    const routeName = router.currentRoute.value.name
+    if (routeName === 'home' || routeName === 'library') {
+      await router.push({ name: 'library', params: { libId: lib.id } })
     }
   } catch (error) {
-    addError.value = toErrorMessage(error);
+    addError.value = toErrorMessage(error)
   } finally {
-    adding.value = false;
+    adding.value = false
   }
 }
 
 function startRename(id: string, name: string): void {
-  editingId.value = id;
-  editingName.value = name;
+  editingId.value = id
+  editingName.value = name
 }
 
 async function commitRename(id: string): Promise<void> {
-  if (editingName.value.trim()) await libraryStore.rename(id, editingName.value);
-  editingId.value = "";
+  if (editingName.value.trim()) await libraryStore.rename(id, editingName.value)
+  editingId.value = ''
 }
 
 function removeLibrary(id: string, name: string): void {
   dialog.warning({
-    title: "Xóa kho truyện?",
+    title: 'Xóa kho truyện?',
     content: `Xóa "${name}" khỏi danh sách? (Không xóa dữ liệu trên Google Drive)`,
-    positiveText: "Xóa",
-    negativeText: "Để lại",
+    positiveText: 'Xóa',
+    negativeText: 'Để lại',
     onPositiveClick: async () => {
-      await libraryStore.remove(id);
-      message.success("Đã xóa kho");
+      await libraryStore.remove(id)
+      message.success('Đã xóa kho')
       // Nếu kho đang mở bị xóa thì về đúng kho active mới
       if (router.currentRoute.value.params.libId) {
-        const activeId = libraryStore.activeId;
+        const activeId = libraryStore.activeId
         void router.push(
-          activeId ? { name: "library", params: { libId: activeId } } : { name: "home" },
-        );
+          activeId ? { name: 'library', params: { libId: activeId } } : { name: 'home' },
+        )
       }
     },
-  });
+  })
 }
 </script>
 

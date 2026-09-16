@@ -120,7 +120,10 @@ export async function scanStories(
 
   const result = new Map<string, ChapterRef[]>()
   for (const story of stories) {
-    result.set(story.id, naturalSort(chaptersOf.get(story.id) ?? [], (chapter) => chapter.name))
+    result.set(
+      story.id,
+      naturalSort(chaptersOf.get(story.id) ?? [], (chapter) => chapter.name),
+    )
   }
   return result
 }

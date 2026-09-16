@@ -274,8 +274,8 @@ onMounted(() => {
               <NText depth="3">{{ auth.user.emailAddress }}</NText>
             </NText>
             <NAlert type="info" :bordered="false" style="font-size: 13px">
-              Phiên đăng nhập không lưu trên thiết bị — mỗi lần mở trang, ứng dụng tự kết nối lại
-              với Google.
+              Phiên đăng nhập không lưu trên thiết bị — mỗi lần mở trang, bạn bấm nút đăng nhập
+              để kết nối lại với Google (không phải cấp quyền lại).
             </NAlert>
             <NButton secondary type="error" style="align-self: flex-start" @click="logout">
               Đăng xuất

@@ -171,12 +171,7 @@ Chi tiết luồng dữ liệu (token, quét, cache, đồng bộ): **[docs/arch
 <details>
 <summary><strong>F5 lại ra trang đăng nhập?</strong></summary>
 
-Token không lưu trên máy nên mỗi lần mở trang, app phải xin lại token từ Google (silent). Nếu trình duyệt chặn bước silent, app đưa bạn về trang đăng nhập — bấm nút **1 click là vào lại** (không phải cấp quyền lại). Để vào thẳng không cần bấm:
-
-- Không dùng chế độ ẩn danh / private window
-- Cho phép third-party cookies, hoặc thêm ngoại lệ cho `https://accounts.google.com`
-- Tắt extension chặn popup/tracker
-- Đăng nhập Google trong cùng profile trình duyệt đang mở app
+Chủ đích vậy: token không lưu trên máy, mỗi lần mở trang app đưa bạn về trang đăng nhập — bấm nút **1 click là vào lại** (Google không hỏi cấp quyền lại vì đã cấp trước đó).
 
 </details>
 

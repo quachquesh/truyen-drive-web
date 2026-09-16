@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NButton, NCard, NSpin, NText, useMessage } from 'naive-ui'
+import { NAlert, NButton, NCard, NText, useMessage } from 'naive-ui'
 
 import AppIcon from '@/components/AppIcon.vue'
+import { readLoginHint } from '@/lib/googleAuth'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 const message = useMessage()
+
+/** Có login-hint trong localStorage → máy này từng đăng nhập thành công */
+const returningUser = !!readLoginHint()
 
 async function login(): Promise<void> {
   const ok = await auth.login()
@@ -27,6 +31,19 @@ async function login(): Promise<void> {
         <AppIcon name="book" :size="44" class="logo" />
         <h1 class="title">Truyện Drive</h1>
         <NText depth="2"> Đọc truyện từ kho Google Drive riêng tư của bạn </NText>
+
+        <NAlert v-if="!returningUser" type="warning" :bordered="false" class="privacy-alert">
+          <strong>Minh bạch về quyền riêng tư:</strong> ứng dụng chạy hoàn toàn trên trình duyệt
+          của bạn — không thu thập dữ liệu gì, truyện và cài đặt ở lại trên Google Drive của bạn.
+          <a
+            href="https://github.com/quachquesh/truyen-drive-web"
+            target="_blank"
+            rel="noopener"
+            class="privacy-link"
+          >
+            Mã nguồn công khai trên GitHub ↗
+          </a>
+        </NAlert>
 
         <NAlert
           v-if="!auth.clientConfigured"
@@ -53,12 +70,12 @@ async function login(): Promise<void> {
         </NAlert>
 
         <NAlert
-          v-else-if="auth.booted && !auth.authed"
+          v-else-if="returningUser && !auth.authed"
           type="info"
           :bordered="false"
           style="margin-top: 20px; text-align: left"
         >
-          Phiên đăng nhập cần khôi phục — bấm nút bên dưới để vào lại, Google
+          Mỗi lần mở trang cần đăng nhập lại — bấm nút bên dưới là vào tiếp, Google
           <strong>không hỏi cấp quyền lại</strong> (đã cấp trước đó).
         </NAlert>
 
@@ -92,13 +109,9 @@ async function login(): Promise<void> {
           Đăng nhập bằng Google
         </NButton>
 
-        <NSpin v-if="auth.booting" size="small" style="margin-top: 16px">
-          <NText depth="3" style="font-size: 12px">Đang khôi phục phiên đăng nhập...</NText>
-        </NSpin>
-
         <NText depth="3" style="font-size: 12px; margin-top: 16px; display: block">
           Chỉ tài khoản được chia sẻ quyền truy cập kho mới xem được nội dung. Phiên đăng nhập
-          không lưu trên thiết bị — mỗi lần mở trang, ứng dụng tự kết nối lại với Google.
+          không lưu trên thiết bị.
         </NText>
       </div>
     </NCard>
@@ -158,6 +171,20 @@ html.dark .login-wrap {
   opacity: 0.7;
   margin-top: 6px;
   font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', Menlo, Consolas, monospace;
+}
+
+.privacy-alert {
+  margin-top: 20px;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.privacy-link {
+  display: inline-block;
+  padding: 4px 0;
+  color: var(--tdw-primary);
+  font-weight: 600;
 }
 
 .google-g {

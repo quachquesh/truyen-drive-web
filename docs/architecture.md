@@ -51,7 +51,7 @@ src/
 
 1. `main.ts` mount app; router guard (`router.beforeEach`) gọi `auth.boot()` với mọi route không public.
 2. `googleAuth.ts` nạp script GIS, tạo token client với 2 scope `drive.readonly` + `drive.appdata`.
-3. Token nhận được nằm trong `tokenBox.ts` (biến memory). **Không bao giờ ghi xuống localStorage** — refresh trang là mất, app tự xin lại silent (dùng login-hint email lưu ở localStorage để Google chọn đúng tài khoản).
+3. Token nhận được nằm trong `tokenBox.ts` (biến memory). **Không bao giờ ghi xuống localStorage** — refresh trang là mất, guard đưa về trang login để người dùng bấm nút xin lại (login-hint email lưu ở localStorage giúp Google chọn đúng tài khoản). Không tự xin token ngầm khi tải trang; trong phiên, token sắp hết hạn/401 thì axios interceptor mới silent re-mint.
 4. Mọi request Drive qua `driveApi.ts`: interceptor 401 → thử refresh token 1 lần; 403/429/5xx → backoff lũy tiến rồi retry.
 
 ### Quét kho (lazy từng tầng)

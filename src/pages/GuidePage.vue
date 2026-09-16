@@ -54,11 +54,8 @@ const sections = [
           </li>
         </ul>
         <p>
-          Các lần sau mở trang, ứng dụng tự kết nối lại với Google — bạn vào thẳng thư viện mà không
-          cần bấm gì. Token đăng nhập không lưu trên máy, nên đôi khi trình duyệt yêu cầu xác nhận
-          lại — khi đó chỉ cần bấm nút đăng nhập <strong>một cái là vào lại</strong> (Google không
-          hỏi cấp quyền lại). Xem thêm phần <a href="#su-co">Sự cố thường gặp</a> nếu phải bấm quá
-          thường xuyên.
+          Token đăng nhập không lưu trên máy nên mỗi lần mở trang, bạn bấm nút đăng nhập
+          <strong>một cái là vào lại</strong> — Google không hỏi cấp quyền lại (đã cấp trước đó).
         </p>
       </NCard>
 
@@ -189,9 +186,9 @@ const sections = [
       <NCard id="su-co" title="9. Sự cố thường gặp" size="small" class="section">
         <ul>
           <li>
-            <strong>Refesh trang lại ra trang đăng nhập?</strong> — bình thường do token không lưu
-            trên máy. Bấm nút đăng nhập 1 cái là vào lại. Để vào thẳng: không dùng chế độ ẩn danh,
-            cho phép third-party cookies, và đăng nhập Google trong cùng profile trình duyệt.
+            <strong>Refresh trang lại ra trang đăng nhập?</strong> — bình thường, phiên đăng nhập
+            không lưu trên máy. Bấm nút đăng nhập 1 cái là vào lại, Google không hỏi cấp quyền
+            lại.
           </li>
           <li>
             <strong>Chương hiện “Google chặn tải file” / ảnh mờ hơn?</strong> — kho bật

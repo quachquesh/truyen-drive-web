@@ -91,7 +91,7 @@ router.beforeEach(async (to) => {
     return true
   }
 
-  // Refresh trang → mất token trong memory → boot() xin lại silent
+  // Refresh trang → mất token trong memory → boot() không tự xin lại, đưa về login
   await auth.boot()
   if (!auth.authed) {
     return { name: 'login', query: { redirect: to.fullPath } }

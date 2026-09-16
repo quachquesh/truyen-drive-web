@@ -64,7 +64,7 @@ let waitingReject: ((error: Error) => void) | null = null
  */
 const LOGIN_HINT_KEY = 'tdw-login-hint'
 
-function readLoginHint(): string {
+export function readLoginHint(): string {
   try {
     return localStorage.getItem(LOGIN_HINT_KEY) ?? ''
   } catch {

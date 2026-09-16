@@ -2,7 +2,6 @@ import { acceptHMRUpdate, defineStore } from 'pinia'
 
 import { getAboutUser, type DriveUser } from '@/lib/driveApi'
 import {
-  InteractionRequiredError,
   clearLoginHint,
   isClientConfigured,
   requestToken,
@@ -14,14 +13,13 @@ import { useSyncStore } from './sync'
 
 /**
  * Token Google chỉ giữ trong memory (tokenBox). Refresh trang → mất token →
- * guard gọi boot() xin lại silent. Không bao giờ ghi ra storage.
+ * guard đưa về login, người dùng bấm nút xin lại. Không bao giờ ghi ra storage.
  */
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     authed: false,
-    /** Đã thử silent sau khi trang vừa load chưa */
+    /** boot() đã chạy lần nào sau khi trang load chưa */
     booted: false,
-    booting: false,
     loginPending: false,
     loginError: '',
     user: null as DriveUser | null,
@@ -60,30 +58,16 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
-    /** Gọi 1 lần sau khi trang load — xin token lại silent (không popup). */
+    /** Gọi 1 lần sau khi trang load — không tự xin token; người dùng bấm nút đăng nhập. */
     async boot(): Promise<void> {
-      if (this.booted || this.booting) return
-      this.booting = true
+      if (this.booted) return
       this.wireRefresher()
-      try {
-        if (tokenBox.hasToken()) {
-          // đã có token trong memory (không xảy ra sau F5, nhưng đề phòng)
-          this.authed = true
-          void this.fetchUser()
-          return
-        }
-        const granted = await requestToken({ silent: true })
-        await this.applyGrant(granted)
-      } catch (error) {
-        this.authed = false
-        if (!(error instanceof InteractionRequiredError)) {
-          // Lỗi khác (mạng, GIS...) — để login page hiển thị
-          this.loginError = error instanceof Error ? error.message : String(error)
-        }
-      } finally {
-        this.booting = false
-        this.booted = true
+      if (tokenBox.hasToken()) {
+        // còn token trong memory (SPA navigation, không xảy ra sau F5) → vẫn đăng nhập
+        this.authed = true
+        void this.fetchUser()
       }
+      this.booted = true
     },
 
     /** Nút Đăng nhập — popup có user gesture; prompt mặc định rỗng (không ép consent lại). */

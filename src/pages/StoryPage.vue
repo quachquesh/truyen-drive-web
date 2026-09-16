@@ -15,6 +15,7 @@ import {
 
 import AppIcon from '@/components/AppIcon.vue'
 import { toErrorMessage } from '@/lib/driveApi'
+import { formatDate } from '@/lib/dates'
 import { getCache, getProgress, type ProgressRecord } from '@/lib/db'
 import type { ChapterRef, StorySummary } from '@/lib/scanner'
 import { useStoriesStore } from '@/stores/stories'
@@ -256,7 +257,12 @@ function markGroup(chapter: ChapterRef): void {
           @click="openChapter(item)"
           @keydown.enter="openChapter(item)"
         >
-          <span class="chapter-name">{{ item.name }}</span>
+          <span class="chapter-main">
+            <span class="chapter-name">{{ item.name }}</span>
+            <NText v-if="item.modifiedTime" depth="3" class="chapter-date">
+              {{ formatDate(item.modifiedTime) }}
+            </NText>
+          </span>
           <span class="chapter-side">
             <NTag v-if="item.id === progress?.chapterId" size="tiny" type="success">Đang đọc</NTag>
             <NButton
@@ -360,10 +366,23 @@ function markGroup(chapter: ChapterRef): void {
   box-shadow: inset 3px 0 0 var(--tdw-primary);
 }
 
+/* Cột trái của row: tên + ngày — min-width:0 để tên vẫn ellipsis trong flex row */
+.chapter-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
 .chapter-name {
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapter-date {
+  font-size: 12px;
   white-space: nowrap;
 }
 

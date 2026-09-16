@@ -108,13 +108,15 @@ export const useStoriesStore = defineStore('stories', {
           if (gen !== this.gen) return
           if (cached) {
             this.stories = cached.data
-            // Cache viết trước khi có modifiedTime (thiếu field) → lấy lại 1 lần cho đủ
-            staleCache = cached.data.some((story) => story.modifiedTime === undefined)
+            // Cache viết trước khi có modifiedTime/lastModified (thiếu field) → lấy lại 1 lần cho đủ
+            staleCache = cached.data.some(
+              (story) => story.modifiedTime === undefined || story.lastModified === undefined,
+            )
           }
         }
 
         if (options.force || staleCache || this.stories.length === 0) {
-          const stories = await scanLibraryStories(folderId)
+          const stories = await scanLibraryStories(folderId, { groupMarks: this.groupMarkSet() })
           if (gen !== this.gen) return
           this.stories = stories
           await setCache(storiesKey(libId), stories)
@@ -135,13 +137,14 @@ export const useStoriesStore = defineStore('stories', {
       const marked = this.stories.filter((story) => this.marks[story.id])
       const uncached: StorySummary[] = []
       for (const story of marked) {
-        const cached = await getCache<ChapterRef[]>(chaptersKey(story.id))
-        if (cached) {
-          this.counts[story.id] = cached.data.length
-          this.latest[story.id] = cached.data[cached.data.length - 1]?.name ?? ''
-        } else {
-          uncached.push(story)
-        }
+      const cached = await getCache<ChapterRef[]>(chaptersKey(story.id))
+      // Cache viết trước khi chapter có modifiedTime (thiếu field) → quét lại 1 lần cho đủ
+      if (cached && cached.data.every((chapter) => chapter.modifiedTime !== undefined)) {
+        this.counts[story.id] = cached.data.length
+        this.latest[story.id] = cached.data[cached.data.length - 1]?.name ?? ''
+      } else {
+        uncached.push(story)
+      }
       }
 
       if (uncached.length === 0) return
@@ -262,7 +265,8 @@ export const useStoriesStore = defineStore('stories', {
 
       if (!force) {
         const cached = await getCache<ChapterRef[]>(chaptersKey(storyId))
-        if (cached) {
+        // Cache viết trước khi chapter có modifiedTime (thiếu field) → quét lại 1 lần cho đủ
+        if (cached && cached.data.every((chapter) => chapter.modifiedTime !== undefined)) {
           if (myGen === this.gen) {
             this.counts[storyId] = cached.data.length
             this.latest[storyId] = cached.data[cached.data.length - 1]?.name ?? ''

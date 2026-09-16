@@ -7,7 +7,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import StoryCard from '@/components/StoryCard.vue'
 import { getFileMeta, listChildrenGrouped, toErrorMessage } from '@/lib/driveApi'
 import { naturalSort } from '@/lib/naturalSort'
-import { FOLDER_MIME, type StorySummary } from '@/lib/scanner'
+import { FOLDER_MIME, annotateLastModified, type StorySummary } from '@/lib/scanner'
 import { useStoriesStore } from '@/stores/stories'
 
 const route = useRoute()
@@ -60,10 +60,13 @@ async function load(): Promise<void> {
     const items = (grouped.get(folderId.value) ?? []).filter(
       (item) => item.mimeType === FOLDER_MIME,
     )
-    children.value = naturalSort(
+    const folders = naturalSort(
       items.map((item) => ({ id: item.id, name: item.name, modifiedTime: item.modifiedTime })),
       (child) => child.name,
     )
+    // Drive không bump ngày folder cha khi thêm con → tính ngày cập nhật hiệu dụng
+    await annotateLastModified(folders, { groupMarks: storiesStore.groupMarkSet() })
+    children.value = folders
   } catch (e) {
     error.value = toErrorMessage(e)
   } finally {

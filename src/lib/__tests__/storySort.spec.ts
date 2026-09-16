@@ -32,6 +32,15 @@ describe('sortStories', () => {
     expect(sortStories(missing, 'modified').map((story) => story.id)).toEqual(['y', 'x'])
   })
 
+  it("'modified': ưu tiên lastModified (ngày tính cả chap mới) hơn modifiedTime", () => {
+    const list: StorySummary[] = [
+      // Folder cũ 01/01 nhưng chap mới 16/09 → đứng trước
+      { id: 'a', name: 'A', modifiedTime: '2026-01-01T00:00:00.000Z', lastModified: '2026-09-16T00:00:00.000Z' },
+      { id: 'b', name: 'B', modifiedTime: '2026-09-10T00:00:00.000Z', lastModified: '2026-09-12T00:00:00.000Z' },
+    ]
+    expect(sortStories(list, 'modified').map((story) => story.id)).toEqual(['a', 'b'])
+  })
+
   it('không đổi mảng gốc', () => {
     const original = [...stories]
     sortStories(stories, 'modified')

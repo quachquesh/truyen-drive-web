@@ -7,8 +7,18 @@ import { useStoriesStore } from '../stories'
 
 // Mock Drive scan
 const scanLibraryStories = vi.fn<(folderId: string) => Promise<StorySummary[]>>(async () => [
-  { id: 'story-1', name: 'Truyện 1', modifiedTime: '2026-09-15T08:00:00.000Z' },
-  { id: 'story-2', name: 'Truyện 2', modifiedTime: '2026-09-14T08:00:00.000Z' },
+  {
+    id: 'story-1',
+    name: 'Truyện 1',
+    modifiedTime: '2026-09-15T08:00:00.000Z',
+    lastModified: '2026-09-15T08:00:00.000Z',
+  },
+  {
+    id: 'story-2',
+    name: 'Truyện 2',
+    modifiedTime: '2026-09-14T08:00:00.000Z',
+    lastModified: '2026-09-16T08:00:00.000Z',
+  },
 ])
 const scanStories = vi.fn<(stories: StorySummary[]) => Promise<Map<string, ChapterRef[]>>>(
   async (stories) => {
@@ -113,7 +123,12 @@ describe('storiesStore.openLibrary (không auto-detect)', () => {
 
     expect(scanStories).toHaveBeenCalledTimes(1)
     expect(scanStories).toHaveBeenCalledWith([
-      { id: 'story-2', name: 'Truyện 2', modifiedTime: '2026-09-14T08:00:00.000Z' },
+      {
+        id: 'story-2',
+        name: 'Truyện 2',
+        modifiedTime: '2026-09-14T08:00:00.000Z',
+        lastModified: '2026-09-16T08:00:00.000Z',
+      },
     ])
     expect(storiesStore.counts['story-2']).toBe(3)
     expect(storiesStore.latest['story-2']).toBe('10')
@@ -138,25 +153,33 @@ describe('storiesStore.openLibrary (không auto-detect)', () => {
     expect(storiesStore.listLoading).toBe(false)
   })
 
-  it('cache cũ thiếu modifiedTime → tự lấy lại danh sách (self-heal)', async () => {
+  it('cache cũ thiếu lastModified (viết trước bản có) → tự lấy lại danh sách (self-heal)', async () => {
     setupLibrary()
+    // Cache thực tế của bản cũ: có modifiedTime nhưng chưa có lastModified
     cacheStore.set('stories:uuid-noi-bo', {
       key: 'stories:uuid-noi-bo',
-      data: [{ id: 'story-1', name: 'Truyện 1' }],
+      data: [{ id: 'story-1', name: 'Truyện 1', modifiedTime: '2026-09-15T08:00:00.000Z' }],
       fetchedAt: 1,
     })
     const storiesStore = useStoriesStore()
     await storiesStore.openLibrary('uuid-noi-bo')
 
     expect(scanLibraryStories).toHaveBeenCalledTimes(1)
-    expect(storiesStore.stories.every((story) => story.modifiedTime !== undefined)).toBe(true)
+    expect(storiesStore.stories.every((story) => story.lastModified !== undefined)).toBe(true)
   })
 
-  it('cache đã đủ modifiedTime → KHÔNG gọi lại Drive', async () => {
+  it('cache đã đủ modifiedTime/lastModified → KHÔNG gọi lại Drive', async () => {
     setupLibrary()
     cacheStore.set('stories:uuid-noi-bo', {
       key: 'stories:uuid-noi-bo',
-      data: [{ id: 'story-1', name: 'Truyện 1', modifiedTime: '2026-09-15T08:00:00.000Z' }],
+      data: [
+        {
+          id: 'story-1',
+          name: 'Truyện 1',
+          modifiedTime: '2026-09-15T08:00:00.000Z',
+          lastModified: '2026-09-15T08:00:00.000Z',
+        },
+      ],
       fetchedAt: Date.now(),
     })
     const storiesStore = useStoriesStore()

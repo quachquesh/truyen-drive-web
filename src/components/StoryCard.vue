@@ -4,6 +4,7 @@ import { NButton, NCard, NSpin, NTag, NText, NTooltip } from 'naive-ui'
 
 import AppIcon from '@/components/AppIcon.vue'
 import { useStoriesStore } from '@/stores/stories'
+import { formatDate } from '@/lib/dates'
 import type { ProgressRecord } from '@/lib/db'
 import type { StorySummary } from '@/lib/scanner'
 
@@ -28,18 +29,8 @@ const progressText = computed(() => {
     : record.chapterName
 })
 
-/** dd/MM/yyyy từ modifiedTime của Drive; rỗng nếu không có (cache cũ) hoặc lỗi parse */
-const modifiedText = computed(() => {
-  const iso = props.story.modifiedTime
-  if (!iso) return ''
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return ''
-  return new Intl.DateTimeFormat('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(date)
-})
+/** dd/MM/yyyy từ ngày cập nhật gần nhất; rỗng nếu không có (cache cũ) hoặc lỗi parse */
+const modifiedText = computed(() => formatDate(props.story.lastModified ?? props.story.modifiedTime))
 </script>
 
 <template>
@@ -50,7 +41,7 @@ const modifiedText = computed(() => {
       style="margin-top: 6px"
       depth="3"
       class="modified"
-      title="Ngày sửa đổi trên Drive"
+      title="Ngày cập nhật gần nhất (tính cả chap mới)"
     >
       <AppIcon name="calendar" :size="12" class="modified-icon" />
       {{ modifiedText }}

@@ -8,20 +8,26 @@ const folders: Record<string, DriveItem[]> = {
   root: [
     folder('f-31', '31', '2026-09-15T08:00:00.000Z'),
     folder('f-32', '32'),
-    folder('f-0-30', '0-30'),
+    folder('f-0-30', '0-30', '2026-08-23T00:00:00.000Z'),
     file('ignored.txt', 'text/plain'),
   ],
   'f-31': [file('002.jpg', 'image/jpeg'), file('001.jpg', 'image/jpeg')],
   'f-32': [file('truyen.pdf', 'application/pdf')],
-  'f-0-30': [folder('c-0', '0'), folder('c-2', '2'), folder('c-5', '5'), folder('c-10', '10')],
+  'f-0-30': [
+    folder('c-0', '0'),
+    folder('c-2', '2'),
+    folder('c-5', '5'),
+    // Chap mới up 16/09 nằm trong khi folder truyện vẫn đứng ở 23/08
+    folder('c-10', '10', '2026-09-16T10:00:00.000Z'),
+  ],
   'c-0': [file('z.png', 'image/png'), file('a.png', 'image/png')],
   'c-2': [file('only.jpg', 'image/jpeg')],
   'c-5': [file('m.webp', 'image/webp')],
   'c-10': [file('x.webp', 'image/webp')],
   // Truyện nhóm lồng sâu: nhóm > nhóm con > chapter
-  deep: [folder('g1', 'Phần 1'), folder('c-9', '9')],
+  deep: [folder('g1', 'Phần 1', '2026-08-01T00:00:00.000Z'), folder('c-9', '9', '2026-08-05T00:00:00.000Z')],
   g1: [folder('g1a', 'Tập 1')],
-  g1a: [folder('c-5d', '5')],
+  g1a: [folder('c-5d', '5', '2026-09-16T12:00:00.000Z')],
   'c-5d': [file('p.jpg', 'image/jpeg')],
   'c-9': [file('q.jpg', 'image/jpeg')],
   // Trộn cả ảnh lẫn PDF → ensureChapterFiles ưu tiên ảnh
@@ -78,8 +84,8 @@ vi.mock('../db', () => ({
   }),
 }))
 
-import { listChildren } from '../driveApi'
-import { ensureChapterFiles, scanLibraryStories, scanStories, scanStory } from '../scanner'
+import { listChildren, listChildrenGrouped } from '../driveApi'
+import { ensureChapterFiles, latestIso, scanLibraryStories, scanStories, scanStory } from '../scanner'
 
 beforeEach(() => {
   vi.mocked(listChildren).mockClear()
@@ -153,6 +159,17 @@ describe('scanStories / scanStory (1 cấp tự động + đánh dấu nhóm)', 
     const chapters = await scanStory('c-empty')
     expect(chapters).toHaveLength(1)
   })
+
+  it('chapter giữ modifiedTime của folder chapter (kể cả chap trong nhóm)', async () => {
+    const chapters = await scanStory('root', { groupMarks: new Set(['f-0-30']) })
+    expect(chapters.find((chapter) => chapter.name === '31')?.modifiedTime).toBe(
+      '2026-09-15T08:00:00.000Z',
+    )
+    // "10" nằm trong nhóm 0-30 → vẫn mang ngày của folder nó
+    expect(chapters.find((chapter) => chapter.name === '10')?.modifiedTime).toBe(
+      '2026-09-16T10:00:00.000Z',
+    )
+  })
 })
 
 describe('ensureChapterFiles (lazy — chỉ lấy khi mở chapter)', () => {
@@ -222,7 +239,58 @@ describe('scanLibraryStories', () => {
   it('chỉ lấy folder con, sort tự nhiên, giữ ngày sửa đổi', async () => {
     const stories = await scanLibraryStories('root')
     expect(stories.map((story) => story.name)).toEqual(['0-30', '31', '32'])
-    expect(stories[0]?.modifiedTime).toBeUndefined()
-    expect(stories[1]?.modifiedTime).toBe('2026-09-15T08:00:00.000Z')
+    expect(stories.find((story) => story.name === '32')?.modifiedTime).toBeUndefined()
+    expect(stories.find((story) => story.name === '31')?.modifiedTime).toBe(
+      '2026-09-15T08:00:00.000Z',
+    )
+  })
+
+  it('lastModified = max(ngày folder, ngày con trực tiếp) — chap mới 16/09 bump được ngày 23/08', async () => {
+    const stories = await scanLibraryStories('root')
+    // Truyện "0-30": folder đứng ở 23/08 nhưng chap con "10" up 16/09
+    expect(stories.find((story) => story.name === '0-30')?.lastModified).toBe(
+      '2026-09-16T10:00:00.000Z',
+    )
+    // Truyện "31": con trực tiếp chỉ là file (bỏ qua) → giữ ngày folder
+    expect(stories.find((story) => story.name === '31')?.lastModified).toBe(
+      '2026-09-15T08:00:00.000Z',
+    )
+  })
+
+  it('chap mới trong nhóm lồng nhau cũng bump lastModified khi đã đánh dấu nhóm', async () => {
+    const marked = await scanLibraryStories('deep', { groupMarks: new Set(['g1', 'g1a']) })
+    // "5" nằm sâu 2 tầng nhóm (deep > Phần 1 > Tập 1 > 5) — descend qua nhóm đã đánh dấu
+    expect(marked.find((story) => story.name === 'Phần 1')?.lastModified).toBe(
+      '2026-09-16T12:00:00.000Z',
+    )
+  })
+
+  it('chưa đánh dấu nhóm → không descend, chỉ max con trực tiếp', async () => {
+    const unmarked = await scanLibraryStories('deep')
+    expect(unmarked.find((story) => story.name === 'Phần 1')?.lastModified).toBe(
+      '2026-08-01T00:00:00.000Z',
+    )
+  })
+
+  it('request annotate lỗi → fallback lastModified = modifiedTime, không chặn danh sách', async () => {
+    vi.mocked(listChildrenGrouped).mockRejectedValueOnce(new Error('500'))
+    const stories = await scanLibraryStories('root')
+    expect(stories.map((story) => story.name)).toEqual(['0-30', '31', '32'])
+    expect(stories.find((story) => story.name === '0-30')?.lastModified).toBe(
+      '2026-08-23T00:00:00.000Z',
+    )
+  })
+})
+
+describe('latestIso', () => {
+  it('trả ISO mới nhất, bỏ qua rỗng/undefined/lỗi parse', () => {
+    expect(
+      latestIso(undefined, '2026-08-23T00:00:00.000Z', 'not-a-date', '2026-09-16T10:00:00.000Z'),
+    ).toBe('2026-09-16T10:00:00.000Z')
+  })
+
+  it('không có giá trị hợp lệ nào → undefined', () => {
+    expect(latestIso()).toBeUndefined()
+    expect(latestIso(undefined, 'garbage')).toBeUndefined()
   })
 })

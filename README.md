@@ -1,6 +1,8 @@
-# Truyện Drive
-
 <div align="center">
+
+<img src="docs/logo.svg" width="72" alt="Logo Truyện Drive" />
+
+# Truyện Drive
 
 **Đọc truyện tranh từ kho Google Drive riêng tư của bạn — ngay trong trình duyệt.**
 

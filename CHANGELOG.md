@@ -4,11 +4,22 @@ Các thay đổi đáng chú ý của project được ghi ở file này theo fo
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-09-16
+
+Bản phát hành chính thức đầu tiên.
+
 ### Added
 
 - Viết lại README + tài liệu chi tiết trong `docs/` (OAuth, cấu trúc Drive, kiến trúc, deploy Cloudflare Pages)
 - Trang **Chính sách bảo mật** (`/privacy`), **Điều khoản sử dụng** (`/terms`), **Hướng dẫn sử dụng** (`/guide`) — public, không cần đăng nhập
 - Issue templates (bug report, feature request)
+- Logo + favicon riêng cho app
+- Đánh dấu folder là **"danh sách nhiều truyện"** tách khỏi kiểu "nhóm chapter" — trang thư mục và card hiện đúng nhãn ("Danh sách truyện" / "Nhóm chapter") thay vì "Chưa phân loại" sau khi đã phân loại
+
+### Fixed
+
+- Layout mobile: toolbar reader (nút icon-only, ô nhảy chương co giãn), tiêu đề trang truyện, card trong kho
+- Card truyện không căn cạnh đáy trong cùng hàng grid do selector CSS nhầm class content của naive-ui (`n-card-content` thay vì `n-card__content`)
 
 ## [0.1.0] — 2026-09-16
 

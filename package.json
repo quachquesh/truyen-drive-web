@@ -1,6 +1,25 @@
 {
   "name": "truyen-drive-web",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Đọc truyện tranh từ kho Google Drive riêng tư — web app thuần client (Vue 3 + TypeScript), không backend.",
+  "keywords": [
+    "manga-reader",
+    "google-drive",
+    "vue",
+    "typescript",
+    "vite",
+    "pdfjs",
+    "truyen-tranh"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/quachquesh/truyen-drive-web.git"
+  },
+  "bugs": {
+    "url": "https://github.com/quachquesh/truyen-drive-web/issues"
+  },
+  "homepage": "https://github.com/quachquesh/truyen-drive-web#readme",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {

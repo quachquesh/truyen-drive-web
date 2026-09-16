@@ -40,3 +40,5 @@ __screenshots__/
 
 # ZCode agent session artifacts (plans etc.)
 .zcode/
+
+bun.lock

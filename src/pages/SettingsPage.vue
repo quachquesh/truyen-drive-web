@@ -282,6 +282,24 @@ onMounted(() => {
             </NButton>
           </NSpace>
         </NCard>
+
+        <NDivider />
+
+        <NCard title="Hỗ trợ & thông tin" size="small">
+          <NSpace vertical size="small">
+            <RouterLink :to="{ name: 'guide' }" class="info-link">Hướng dẫn sử dụng</RouterLink>
+            <RouterLink :to="{ name: 'privacy' }" class="info-link">Chính sách bảo mật</RouterLink>
+            <RouterLink :to="{ name: 'terms' }" class="info-link">Điều khoản sử dụng</RouterLink>
+            <a
+              href="https://github.com/quachquesh/truyen-drive-web"
+              target="_blank"
+              rel="noopener"
+              class="info-link"
+            >
+              Mã nguồn (GitHub)
+            </a>
+          </NSpace>
+        </NCard>
       </NGi>
     </NGrid>
   </div>
@@ -292,6 +310,16 @@ onMounted(() => {
   max-width: 900px;
   margin: 0 auto;
   padding: 16px;
+}
+
+.info-link {
+  color: var(--tdw-primary);
+  text-decoration: none;
+  width: fit-content;
+}
+
+.info-link:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 640px) {

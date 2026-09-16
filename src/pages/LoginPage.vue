@@ -102,6 +102,14 @@ async function login(): Promise<void> {
         </NText>
       </div>
     </NCard>
+
+    <nav class="login-links" aria-label="Liên kết hữu ích">
+      <RouterLink :to="{ name: 'guide' }">Hướng dẫn sử dụng</RouterLink>
+      <span aria-hidden="true">·</span>
+      <RouterLink :to="{ name: 'privacy' }">Chính sách bảo mật</RouterLink>
+      <span aria-hidden="true">·</span>
+      <RouterLink :to="{ name: 'terms' }">Điều khoản sử dụng</RouterLink>
+    </nav>
   </div>
 </template>
 
@@ -110,6 +118,7 @@ async function login(): Promise<void> {
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 16px;
@@ -154,5 +163,22 @@ html.dark .login-wrap {
 .google-g {
   margin-right: 10px;
   flex-shrink: 0;
+}
+
+.login-links {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--tdw-text-muted);
+}
+
+.login-links a {
+  color: var(--tdw-text-muted);
+}
+
+.login-links a:hover {
+  color: var(--tdw-primary);
 }
 </style>

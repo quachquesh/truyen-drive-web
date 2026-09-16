@@ -2,8 +2,9 @@
   "extends": "./tsconfig.app.json",
 
   // Override to include only test files and clear exclusions.
-  // Application code imported in tests is automatically included via module resolution.
-  "include": ["src/**/__tests__/*", "env.d.ts"],
+  // Application code imported in tests is automatically included via module resolution —
+  // ngoại lệ: file .d.ts ambient (như gis.d.ts khai báo global `google`) phải include thủ công.
+  "include": ["src/**/__tests__/*", "src/lib/gis.d.ts", "env.d.ts"],
   "exclude": [],
 
   "compilerOptions": {

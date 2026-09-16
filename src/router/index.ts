@@ -7,6 +7,9 @@ const LibraryPage = () => import('@/pages/LibraryPage.vue')
 const StoryPage = () => import('@/pages/StoryPage.vue')
 const ReaderPage = () => import('@/pages/ReaderPage.vue')
 const SettingsPage = () => import('@/pages/SettingsPage.vue')
+const GuidePage = () => import('@/pages/GuidePage.vue')
+const PrivacyPage = () => import('@/pages/PrivacyPage.vue')
+const TermsPage = () => import('@/pages/TermsPage.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -49,6 +52,25 @@ const router = createRouter({
       path: '/settings',
       name: 'settings',
       component: SettingsPage,
+    },
+    {
+      // Trang tĩnh — xem được cả khi chưa đăng nhập (Google OAuth review cần /privacy)
+      path: '/guide',
+      name: 'guide',
+      component: GuidePage,
+      meta: { public: true, chrome: false },
+    },
+    {
+      path: '/privacy',
+      name: 'privacy',
+      component: PrivacyPage,
+      meta: { public: true, chrome: false },
+    },
+    {
+      path: '/terms',
+      name: 'terms',
+      component: TermsPage,
+      meta: { public: true, chrome: false },
     },
     {
       path: '/:pathMatch(.*)*',

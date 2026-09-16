@@ -98,6 +98,18 @@ const activeName = computed(() => libraryStore.active?.name ?? 'Chọn kho')
         </template>
       </NButton>
 
+      <NButton
+        quaternary
+        circle
+        size="medium"
+        title="Hướng dẫn sử dụng"
+        @click="router.push({ name: 'guide' })"
+      >
+        <template #icon>
+          <AppIcon name="help" :size="18" />
+        </template>
+      </NButton>
+
       <NDropdown trigger="click" :options="userOptions" @select="onUserSelect">
         <NAvatar round size="medium" :src="auth.user?.photoLink" style="cursor: pointer">
           {{ auth.user ? auth.user.emailAddress.charAt(0).toUpperCase() : '?' }}

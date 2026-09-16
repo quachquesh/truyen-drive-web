@@ -8,7 +8,12 @@ import PdfReader from '@/components/PdfReader.vue'
 import ReaderImage from '@/components/ReaderImage.vue'
 import { toErrorMessage } from '@/lib/driveApi'
 import { getProgress, putProgress } from '@/lib/db'
-import { ensureChapterFiles, type ChapterRef, type ChapterWithFiles } from '@/lib/scanner'
+import {
+  ensureChapterFiles,
+  type ChapterFile,
+  type ChapterRef,
+  type ChapterWithFiles,
+} from '@/lib/scanner'
 import { useStoriesStore } from '@/stores/stories'
 
 const route = useRoute()
@@ -41,6 +46,30 @@ const chapterIndex = computed(() =>
 )
 const prevChapter = computed(() => chapters.value[chapterIndex.value - 1])
 const nextChapter = computed(() => chapters.value[chapterIndex.value + 1])
+
+/** Kiểu đọc chapter có cả ảnh lẫn PDF trọn bộ — nhớ lựa chọn của user */
+const READER_MODE_KEY = 'tdw-reader-mode'
+type ReaderMode = 'images' | 'pdf'
+const readerMode = ref<ReaderMode>(
+  localStorage.getItem(READER_MODE_KEY) === 'pdf' ? 'pdf' : 'images',
+)
+watch(readerMode, (mode) => {
+  localStorage.setItem(READER_MODE_KEY, mode)
+})
+
+/** Chapter có ảnh + PDF đi kèm → cho chọn kiểu đọc (chapter PDF-only thì luôn PDF) */
+const hasPdfOption = computed(
+  () => chapterFiles.value?.isPdf === false && Boolean(chapterFiles.value?.pdfFile),
+)
+const usePdf = computed(
+  () => chapterFiles.value?.isPdf === true || (hasPdfOption.value && readerMode.value === 'pdf'),
+)
+const pdfToRender = computed<ChapterFile | null>(() => {
+  const current = chapterFiles.value
+  if (!current) return null
+  if (current.isPdf) return current.files[0] ?? null
+  return current.pdfFile
+})
 
 async function loadChapter(force: boolean): Promise<void> {
   loading.value = true
@@ -200,6 +229,26 @@ watch(chapterId, () => {
           {{ chapterIndex + 1 }}/{{ chapters.length }}
         </NTag>
         <NSpin v-if="pdfLoading" :size="14" />
+        <NSpace v-if="hasPdfOption" size="small" :wrap="false">
+          <NButton
+            size="tiny"
+            secondary
+            :type="readerMode === 'images' ? 'primary' : 'default'"
+            title="Đọc từng ảnh (lazy-load nhanh)"
+            @click="readerMode = 'images'"
+          >
+            🖼 Ảnh
+          </NButton>
+          <NButton
+            size="tiny"
+            secondary
+            :type="readerMode === 'pdf' ? 'primary' : 'default'"
+            title="Đọc file PDF trọn bộ của chapter"
+            @click="readerMode = 'pdf'"
+          >
+            📄 PDF
+          </NButton>
+        </NSpace>
       </NSpace>
       <NSpace size="small">
         <NButton
@@ -265,11 +314,11 @@ watch(chapterId, () => {
     </div>
 
     <template v-else>
-      <!-- Chapter dạng PDF -->
+      <!-- Chapter dạng PDF (PDF-only hoặc user chọn PDF trong chapter ảnh+PDF) -->
       <PdfReader
-        v-if="chapterFiles.isPdf"
-        :key="chapterFiles.id"
-        :file="chapterFiles.files[0]!"
+        v-if="usePdf && pdfToRender"
+        :key="pdfToRender.id"
+        :file="pdfToRender"
         :story-key="progressKey"
         @loading="(v: boolean) => (pdfLoading = v)"
       />

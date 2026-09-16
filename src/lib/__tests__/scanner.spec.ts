@@ -156,6 +156,7 @@ describe('ensureChapterFiles (lazy — chỉ lấy khi mở chapter)', () => {
     const first = await ensureChapterFiles('c-0', '0')
     expect(first.isPdf).toBe(false)
     expect(first.files.map((f) => f.name)).toEqual(['a.png', 'z.png'])
+    expect(first.pdfFile).toBeNull() // chapter chỉ có ảnh, không có PDF đi kèm
     expect(listChildren).toHaveBeenCalledTimes(1)
 
     const second = await ensureChapterFiles('c-0', '0')
@@ -167,18 +168,21 @@ describe('ensureChapterFiles (lazy — chỉ lấy khi mở chapter)', () => {
     const chapter = await ensureChapterFiles('f-32', '32')
     expect(chapter.isPdf).toBe(true)
     expect(chapter.files.map((f) => f.name)).toEqual(['truyen.pdf'])
+    expect(chapter.pdfFile).toBeNull()
   })
 
-  it('folder có cả ảnh và PDF → ưu tiên ảnh', async () => {
+  it('folder có cả ảnh và PDF → ưu tiên ảnh, PDF trở thành option đọc', async () => {
     const chapter = await ensureChapterFiles('mixed', 'mixed')
     expect(chapter.isPdf).toBe(false)
     expect(chapter.files.map((f) => f.name)).toEqual(['a.jpg'])
+    expect(chapter.pdfFile?.name).toBe('all.pdf')
   })
 
   it('chapter trống → không file, không pdf', async () => {
     const chapter = await ensureChapterFiles('c-empty', 'empty')
     expect(chapter.files).toEqual([])
     expect(chapter.isPdf).toBe(false)
+    expect(chapter.pdfFile).toBeNull()
   })
 
   it('force → bỏ qua cache, gọi lại API', async () => {
@@ -186,6 +190,27 @@ describe('ensureChapterFiles (lazy — chỉ lấy khi mở chapter)', () => {
     expect(listChildren).toHaveBeenCalledTimes(1)
     await ensureChapterFiles('c-2', '2', { force: true })
     expect(listChildren).toHaveBeenCalledTimes(2)
+  })
+
+  it('cache cũ thiếu pdfFile → tự lấy lại 1 lần cho đủ field', async () => {
+    // Cache viết trước bản có pdfFile (chỉ {id, name, files, isPdf})
+    cacheStore.set('chapterFiles:old-shape', {
+      key: 'chapterFiles:old-shape',
+      data: {
+        id: 'mixed',
+        name: 'mixed',
+        files: [{ id: 'file-a.jpg', name: 'a.jpg', mimeType: 'image/jpeg' }],
+        isPdf: false,
+      },
+      fetchedAt: 1,
+    })
+    const chapter = await ensureChapterFiles('mixed', 'mixed')
+    expect(listChildren).toHaveBeenCalledTimes(1) // refetch vì cache stale
+    expect(chapter.pdfFile?.name).toBe('all.pdf')
+
+    // Cache đã có field (kể cả null) → không gọi lại
+    await ensureChapterFiles('mixed', 'mixed')
+    expect(listChildren).toHaveBeenCalledTimes(1)
   })
 })
 

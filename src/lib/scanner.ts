@@ -28,6 +28,11 @@ export interface ChapterRef {
 export interface ChapterWithFiles extends ChapterRef {
   files: ChapterFile[]
   isPdf: boolean
+  /**
+   * PDF "trọn bộ" nằm CÙNG ảnh trong chapter (ảnh vẫn là default vì lazy-load rẻ)
+   * — null = không có PDF đi kèm hoặc chapter vốn PDF-only (dùng `files`).
+   */
+  pdfFile: ChapterFile | null
 }
 
 export interface StorySummary {
@@ -164,12 +169,14 @@ export async function ensureChapterFiles(
 ): Promise<ChapterWithFiles> {
   if (!options.force) {
     const cached = await getCache<ChapterWithFiles>(chapterFilesKey(chapterId))
-    if (cached) return cached.data
+    // Cache viết trước khi có pdfFile (field undefined) và không phải PDF-only
+    // → stale, lấy lại 1 lần cho đủ field
+    if (cached && (cached.data.isPdf || cached.data.pdfFile !== undefined)) return cached.data
   }
 
   const children = await listChildren(chapterId, { signal: options.signal })
   const images = children.filter(isImage)
-  const pdfs = children.filter(isPdf)
+  const pdfs = naturalSort(children.filter(isPdf), (file) => file.name)
   const toChapterFile = (file: DriveItem): ChapterFile => ({
     id: file.id,
     name: file.name,
@@ -181,12 +188,15 @@ export async function ensureChapterFiles(
     (file) => file.name,
   )
 
+  const firstPdf = pdfs[0] ? toChapterFile(pdfs[0]) : null
   const chapter: ChapterWithFiles = {
     id: chapterId,
     name: chapterName,
     files,
     // Ưu tiên ảnh (lazy-load rẻ); chỉ PDF-mode khi không có ảnh nào
     isPdf: images.length === 0 && pdfs.length > 0,
+    // Có ảnh + PDF trọn bộ đi kèm → PDF thành option "đọc dạng PDF" ở reader
+    pdfFile: images.length > 0 ? firstPdf : null,
   }
   await setCache(chapterFilesKey(chapterId), chapter)
   return chapter

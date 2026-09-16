@@ -93,13 +93,18 @@ export const useStoriesStore = defineStore('stories', {
       }
 
       try {
+        let staleCache = false
         if (!options.force) {
           const cached = await getCache<StorySummary[]>(storiesKey(libId))
           if (gen !== this.gen) return
-          if (cached) this.stories = cached.data
+          if (cached) {
+            this.stories = cached.data
+            // Cache viết trước khi có modifiedTime (thiếu field) → lấy lại 1 lần cho đủ
+            staleCache = cached.data.some((story) => story.modifiedTime === undefined)
+          }
         }
 
-        if (options.force || this.stories.length === 0) {
+        if (options.force || staleCache || this.stories.length === 0) {
           const stories = await scanLibraryStories(folderId)
           if (gen !== this.gen) return
           this.stories = stories

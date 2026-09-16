@@ -11,8 +11,8 @@ Web app đọc truyện tranh từ kho Google Drive **riêng tư** — chỉ fro
 
   Chapter quét **tự động đúng 1 cấp**: danh sách chapter = các folder con trực tiếp của truyện (1 request batch, không suy diễn). Folder nào thực chất là nhóm (kiểu `0-80`) hiện thành 1 dòng — bấm **⤴ Nhóm** trên dòng đó (hoặc trong màn "Chapter trống") để đưa chapter bên trong lên cùng cấp; nhóm lồng nhau đánh dấu tiếp từng tầng. Đánh dấu nhóm lưu vĩnh viễn; bỏ được ở trang xem thư mục. Danh sách sort tự nhiên (`2 < 10 < 100`).
 - **Lấy ảnh/PDF lazy**: quét cấu trúc không đụng tới file; chỉ khi mở chapter mới request danh sách file (cache lại), blob ảnh lazy-load theo cuộn khi đọc
-- **Nút 📂 trên card** mở nội dung bất kỳ folder nào (lồng sâu tự do) — chính là UI để quyết định folder đó là truyện hay danh sách truyện
-- **Đọc ảnh hoặc PDF**: ảnh lazy-load + prefetch; PDF render bằng pdf.js theo cuộn
+- **Nút 📂 trên card** mở nội dung bất kỳ folder nào (lồng sâu tự do) — chính là UI để quyết định folder đó là truyện hay danh sách truyện; danh sách truyện sắp xếp theo tên hoặc mới cập nhật (nhớ lựa chọn)
+- **Đọc ảnh hoặc PDF**: ảnh lazy-load + prefetch; PDF render bằng pdf.js theo cuộn. Chapter có cả ảnh lẫn PDF "trọn bộ" → nút chuyển **🖼 Ảnh / 📄 PDF** trên toolbar (nhớ lựa chọn)
 - **Cache IndexedDB**: danh sách truyện/chapter, danh sách file chapter, blob ảnh/PDF, tiến trình đọc — đọc lại không tốn mạng. Có nút làm mới / xóa cache từng loại trong Cài đặt; tự backoff khi Drive trả 403/429 rate-limit
 - Lưu **tiến trình đọc**, khôi phục vị trí cuộn, nút "Tiếp tục đọc"
 - Giao diện Naive UI, dark/light mode, tiếng Việt, tìm kiếm không cần dấu

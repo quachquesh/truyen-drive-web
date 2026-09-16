@@ -7,8 +7,8 @@ import { useStoriesStore } from '../stories'
 
 // Mock Drive scan
 const scanLibraryStories = vi.fn<(folderId: string) => Promise<StorySummary[]>>(async () => [
-  { id: 'story-1', name: 'Truyện 1' },
-  { id: 'story-2', name: 'Truyện 2' },
+  { id: 'story-1', name: 'Truyện 1', modifiedTime: '2026-09-15T08:00:00.000Z' },
+  { id: 'story-2', name: 'Truyện 2', modifiedTime: '2026-09-14T08:00:00.000Z' },
 ])
 const scanStories = vi.fn<(stories: StorySummary[]) => Promise<Map<string, ChapterRef[]>>>(
   async (stories) => {
@@ -42,15 +42,20 @@ vi.mock('@/lib/scanner', () => ({
   ) => scanStory(storyId, options),
 }))
 
-// Mock IndexedDB — chapter cache luôn miss, folderTypes mirror bằng Map
+// Mock IndexedDB — cache mirror bằng Map, folderTypes mirror bằng Map
 const folderTypeStore = new Map<
   string,
   { folderId: string; type: 'story' | 'group'; markedAt: number }
 >()
+const cacheStore = new Map<string, { key: string; data: unknown; fetchedAt: number }>()
 const clearChaptersCache = vi.fn<() => Promise<void>>(async () => undefined)
 vi.mock('@/lib/db', () => ({
-  getCache: vi.fn<() => Promise<undefined>>(async () => undefined),
-  setCache: vi.fn<() => Promise<void>>(async () => undefined),
+  getCache: vi.fn<
+    (key: string) => Promise<{ key: string; data: unknown; fetchedAt: number } | undefined>
+  >(async (key) => cacheStore.get(key)),
+  setCache: vi.fn<(key: string, data: unknown) => Promise<void>>(async (key, data) => {
+    cacheStore.set(key, { key, data, fetchedAt: Date.now() })
+  }),
   clearChaptersCache: () => clearChaptersCache(),
   getFolderTypes: vi.fn<
     () => Promise<Array<{ folderId: string; type: 'story' | 'group'; markedAt: number }>>
@@ -68,6 +73,7 @@ vi.mock('@/lib/db', () => ({
 beforeEach(() => {
   vi.clearAllMocks()
   folderTypeStore.clear()
+  cacheStore.clear()
   setActivePinia(createPinia())
 })
 
@@ -99,7 +105,9 @@ describe('storiesStore.openLibrary (không auto-detect)', () => {
     await storiesStore.openLibrary('uuid-noi-bo')
 
     expect(scanStories).toHaveBeenCalledTimes(1)
-    expect(scanStories).toHaveBeenCalledWith([{ id: 'story-2', name: 'Truyện 2' }])
+    expect(scanStories).toHaveBeenCalledWith([
+      { id: 'story-2', name: 'Truyện 2', modifiedTime: '2026-09-14T08:00:00.000Z' },
+    ])
     expect(storiesStore.counts['story-2']).toBe(3)
     expect(storiesStore.latest['story-2']).toBe('10')
     expect(storiesStore.counts['story-1']).toBeUndefined()
@@ -121,6 +129,34 @@ describe('storiesStore.openLibrary (không auto-detect)', () => {
     expect(scanLibraryStories).not.toHaveBeenCalled()
     expect(storiesStore.listError).toContain('Không tìm thấy kho')
     expect(storiesStore.listLoading).toBe(false)
+  })
+
+  it('cache cũ thiếu modifiedTime → tự lấy lại danh sách (self-heal)', async () => {
+    setupLibrary()
+    cacheStore.set('stories:uuid-noi-bo', {
+      key: 'stories:uuid-noi-bo',
+      data: [{ id: 'story-1', name: 'Truyện 1' }],
+      fetchedAt: 1,
+    })
+    const storiesStore = useStoriesStore()
+    await storiesStore.openLibrary('uuid-noi-bo')
+
+    expect(scanLibraryStories).toHaveBeenCalledTimes(1)
+    expect(storiesStore.stories.every((story) => story.modifiedTime !== undefined)).toBe(true)
+  })
+
+  it('cache đã đủ modifiedTime → KHÔNG gọi lại Drive', async () => {
+    setupLibrary()
+    cacheStore.set('stories:uuid-noi-bo', {
+      key: 'stories:uuid-noi-bo',
+      data: [{ id: 'story-1', name: 'Truyện 1', modifiedTime: '2026-09-15T08:00:00.000Z' }],
+      fetchedAt: Date.now(),
+    })
+    const storiesStore = useStoriesStore()
+    await storiesStore.openLibrary('uuid-noi-bo')
+
+    expect(scanLibraryStories).not.toHaveBeenCalled()
+    expect(storiesStore.stories).toHaveLength(1)
   })
 })
 

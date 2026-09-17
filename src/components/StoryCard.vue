@@ -20,12 +20,12 @@ const marked = computed(() => Boolean(storiesStore.marks[props.story.id]))
 const listMarked = computed(() => Boolean(storiesStore.lists[props.story.id]))
 const groupMarked = computed(() => Boolean(storiesStore.groups[props.story.id]))
 
-/** "45/100" khi biết số thứ tự chapter, không thì hiện tên chapter */
+/** "Tên chương (45/100)" khi biết số thứ tự, không thì chỉ tên chương */
 const progressText = computed(() => {
   const record = props.progress
   if (!record) return ''
   return record.chapterNo && record.chapterTotal
-    ? `${record.chapterNo}/${record.chapterTotal}`
+    ? `${record.chapterName} (${record.chapterNo}/${record.chapterTotal})`
     : record.chapterName
 })
 

@@ -34,7 +34,7 @@ const modifiedText = computed(() => formatDate(props.story.lastModified ?? props
 </script>
 
 <template>
-  <NCard hoverable size="small" class="story-card">
+  <NCard size="small" class="story-card">
     <div class="story-name" :title="story.name">{{ story.name }}</div>
     <NText
       v-if="modifiedText"
@@ -153,6 +153,16 @@ const modifiedText = computed(() => formatDate(props.story.lastModified ?? props
 .story-card {
   cursor: pointer;
   height: 100%;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+/* Hover chỉ là enhancement trên desktop; media guard tránh sticky-hover khi tap mobile */
+@media (hover: hover) and (pointer: fine) {
+  .story-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+    border-color: var(--tdw-primary);
+  }
 }
 
 /* Card cao bằng nhau theo hàng grid → content dãn dọc, meta pin xuống đáy.

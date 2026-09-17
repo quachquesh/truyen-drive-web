@@ -4,6 +4,20 @@ Các thay đổi đáng chú ý của project được ghi ở file này theo fo
 
 ## [Unreleased]
 
+## [1.0.3] — 2026-09-18
+
+### Changed
+
+- Card truyện hiện cả tên chương đang đọc kèm số thứ tự — "Đang đọc: Chương 11 (11/12)" thay vì chỉ "45/100"
+- Số "đang đọc x/y" ở nút "Tiếp tục" và card truyện luôn tính theo danh sách chapter hiện tại thay vì số ghi lại lúc đọc — đánh dấu nhóm chapter (vd 3 → 12 chương) hay chương mới được thêm không còn làm sai lệch vị trí
+- Card truyện có hiệu ứng nâng nhẹ khi rê chuột (chỉ desktop, không kẹt trạng thái hover khi chạm trên điện thoại)
+
+### Fixed
+
+- Nút "Làm mới" trang truyện không quét lại được chapter do lỗi truyền tham số; phân loại lại truyện giờ luôn quét tươi ghi đè snapshot cũ
+- Chủ kho thêm chương mới nhưng số chương / chương mới nhất trên card không cập nhật — cache cũ hơn ngày cập nhật của truyện được tự quét lại, kể cả khi vào truyện từ trang thư mục
+- Đánh dấu nhóm chapter trong lúc app đang quét không còn để kết quả quét cũ ghi đè số chương về danh sách trước khi đánh dấu
+
 ## [1.0.2] — 2026-09-17
 
 ### Changed

@@ -17,6 +17,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import { toErrorMessage } from '@/lib/driveApi'
 import { formatDate } from '@/lib/dates'
 import { getCache, getProgress, type ProgressRecord } from '@/lib/db'
+import { displayProgress } from '@/lib/progress'
 import type { ChapterRef, StorySummary } from '@/lib/scanner'
 import { useStoriesStore } from '@/stores/stories'
 import { useSyncStore } from '@/stores/sync'
@@ -98,13 +99,14 @@ const filteredChapters = computed(() => {
   return newestFirst.value ? [...list].reverse() : list
 })
 
-/** Nhãn nút Tiếp tục: kèm "45/100" khi biết số thứ tự chapter */
+/** Nhãn nút Tiếp tục: kèm "45/100" — vị trí tính theo danh sách chapter HIỆN TẠI
+ * (đánh dấu nhóm / chap mới làm đổi danh sách), fallback số ghi lúc đọc */
 const continueText = computed(() => {
   const record = progress.value
   if (!record) return ''
-  return record.chapterNo && record.chapterTotal
-    ? `${record.chapterName} (${record.chapterNo}/${record.chapterTotal})`
-    : record.chapterName
+  const index = chapters.value.findIndex((chapter) => chapter.id === record.chapterId)
+  const display = displayProgress(record, { index, total: chapters.value.length })
+  return display ? `${record.chapterName} (${display.no}/${display.total})` : record.chapterName
 })
 
 function openChapter(chapter: ChapterRef): void {

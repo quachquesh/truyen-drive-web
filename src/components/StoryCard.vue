@@ -5,6 +5,7 @@ import { NButton, NCard, NSpin, NTag, NText, NTooltip } from 'naive-ui'
 import AppIcon from '@/components/AppIcon.vue'
 import { useStoriesStore } from '@/stores/stories'
 import { formatDate } from '@/lib/dates'
+import { displayProgress } from '@/lib/progress'
 import type { ProgressRecord } from '@/lib/db'
 import type { StorySummary } from '@/lib/scanner'
 
@@ -20,13 +21,13 @@ const marked = computed(() => Boolean(storiesStore.marks[props.story.id]))
 const listMarked = computed(() => Boolean(storiesStore.lists[props.story.id]))
 const groupMarked = computed(() => Boolean(storiesStore.groups[props.story.id]))
 
-/** "Tên chương (45/100)" khi biết số thứ tự, không thì chỉ tên chương */
+/** "Tên chương (45/100)" — tổng lấy số chap hiện tại của store (đổi sau khi đánh
+ * dấu nhóm), số thứ tự từ record; thiếu cả hai thì chỉ hiện tên chương */
 const progressText = computed(() => {
   const record = props.progress
   if (!record) return ''
-  return record.chapterNo && record.chapterTotal
-    ? `${record.chapterName} (${record.chapterNo}/${record.chapterTotal})`
-    : record.chapterName
+  const display = displayProgress(record, { total: storiesStore.counts[props.story.id] })
+  return display ? `${record.chapterName} (${display.no}/${display.total})` : record.chapterName
 })
 
 /** dd/MM/yyyy từ ngày cập nhật gần nhất; rỗng nếu không có (cache cũ) hoặc lỗi parse */

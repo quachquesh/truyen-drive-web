@@ -404,6 +404,64 @@ describe('storiesStore.markAsStory / unmarkStory / markAsGroup / markAsList', ()
     expect(options?.groupMarks?.has('story-1-c1')).toBe(true)
   })
 
+  it('đánh dấu nhóm GIỮA CHỪNG quét batch → kết quả quét cũ không ghi đè cache/counts', async () => {
+    const storiesStore = useStoriesStore()
+    folderTypeStore.set('story-2', { folderId: 'story-2', type: 'story', markedAt: 1 })
+    await storiesStore.loadMarks()
+    // Cache cũ: 2 chapter (chuẩn bị bị thay bằng list 3-chapter tính theo groupMarks cũ)
+    cacheStore.set('chapters:story-2', {
+      key: 'chapters:story-2',
+      data: [
+        { id: 'story-2-c1', name: '1', modifiedTime: '2026-09-14T08:00:00.000Z' },
+        { id: 'story-2-c2', name: '2', modifiedTime: '2026-09-14T08:00:00.000Z' },
+      ],
+      fetchedAt: 1,
+    })
+
+    // Quét batch bắt đầu với groupMarks CHƯA có nhóm mới — treo kết quả lại
+    let resolveScan!: (map: Map<string, ChapterRef[]>) => void
+    scanStories.mockImplementationOnce(
+      () => new Promise<Map<string, ChapterRef[]>>((resolve) => (resolveScan = resolve)),
+    )
+    const refresh = storiesStore.refreshMarkedChapters(
+      [
+        {
+          id: 'story-2',
+          name: 'Truyện 2',
+          modifiedTime: '2026-09-14T08:00:00.000Z',
+          lastModified: '2026-09-16T08:00:00.000Z',
+        },
+      ],
+      storiesStore.gen,
+    )
+    await vi.waitFor(() => {
+      expect(scanStories).toHaveBeenCalledTimes(1)
+    })
+
+    // User đánh dấu nhóm trong lúc quét cũ còn chạy → quét cũ bị vô hiệu hóa
+    await storiesStore.markAsGroup('story-2-c1')
+
+    resolveScan(
+      new Map<string, ChapterRef[]>([
+        [
+          'story-2',
+          [
+            { id: 'story-2-c1', name: '1-10', modifiedTime: '2026-09-16T08:00:00.000Z' },
+            { id: 'story-2-c2', name: '11', modifiedTime: '2026-09-16T08:00:00.000Z' },
+            { id: 'story-2-c3', name: '12', modifiedTime: '2026-09-16T08:00:00.000Z' },
+          ],
+        ],
+      ]),
+    )
+    await refresh
+
+    // Danh sách 3-chapter tính theo groupMarks cũ bị vứt — cache/counts giữ nguyên
+    const cached = cacheStore.get('chapters:story-2')?.data as ChapterRef[] | undefined
+    expect(cached?.map((chapter) => chapter.name)).toEqual(['1', '2'])
+    expect(storiesStore.counts['story-2']).toBeUndefined()
+    expect(storiesStore.latest['story-2']).toBeUndefined()
+  })
+
   it('markAsList lưu type list, KHÔNG xóa cache chapter (không ảnh hưởng quét)', async () => {
     setupLibrary()
     const storiesStore = useStoriesStore()

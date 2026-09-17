@@ -199,6 +199,10 @@ export const useStoriesStore = defineStore('stories', {
     /** USER xác nhận folder là truyện → lưu đánh dấu + quét TƯƠI ngay (force). */
     async markAsStory(folderId: string): Promise<void> {
       if (this.marks[folderId]) return
+      // Đánh dấu đổi ý nghĩa quét → vô hiệu mọi quét đang chạy (giữ snapshot
+      // marks cũ, chạy xong sẽ ghi đè cache/counts bằng danh sách cũ)
+      this.gen++
+      this.scanning = {}
       await putFolderType({ folderId, type: 'story', markedAt: Date.now() })
       this.marks[folderId] = 'story'
       // Record ghi đè loại cũ (group/list) → dọn map tương ứng khỏi stale
@@ -229,6 +233,10 @@ export const useStoriesStore = defineStore('stories', {
      */
     async markAsGroup(folderId: string): Promise<void> {
       if (this.groups[folderId]) return
+      // Nhóm mới đưa con lên cùng cấp → mọi quét đang chạy với groupMarks cũ
+      // đều sai (chạy xong sẽ ghi đè cache/counts bằng danh sách cũ) → vô hiệu
+      this.gen++
+      this.scanning = {}
       await putFolderType({ folderId, type: 'group', markedAt: Date.now() })
       this.groups[folderId] = true
       await clearChaptersCache()
@@ -236,6 +244,9 @@ export const useStoriesStore = defineStore('stories', {
     },
 
     async unmarkGroup(folderId: string): Promise<void> {
+      // Bỏ nhóm cũng đổi hình dạng danh sách → vô hiệu quét đang chạy như markAsGroup
+      this.gen++
+      this.scanning = {}
       await deleteFolderType(folderId)
       await putTombstone(markTombstoneKey(folderId), Date.now())
       delete this.groups[folderId]

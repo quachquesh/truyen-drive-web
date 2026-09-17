@@ -67,6 +67,10 @@ async function load(): Promise<void> {
     // Drive không bump ngày folder cha khi thêm con → tính ngày cập nhật hiệu dụng
     await annotateLastModified(folders, { groupMarks: storiesStore.groupMarkSet() })
     children.value = folders
+    // Folder con đã đánh dấu truyện: điền số chap/mới nhất từ cache, cache cũ hơn
+    // lastModified (owner vừa thêm chap) thì quét lại — như Làm mới của LibraryPage
+    await storiesStore.loadMarks()
+    await storiesStore.refreshMarkedChapters(folders, storiesStore.gen)
   } catch (e) {
     error.value = toErrorMessage(e)
   } finally {

@@ -11,6 +11,7 @@ import {
   setCache,
 } from '@/lib/db'
 import {
+  latestIso,
   scanLibraryStories,
   scanStories,
   scanStory,
@@ -25,8 +26,24 @@ const storiesKey = (libId: string): string => `stories:${libId}`
 const chaptersKey = (storyId: string): string => `chapters:${storyId}`
 
 /**
+ * Cache chapter dùng được khi đủ modifiedTime (đời cache cũ thiếu field) và
+ * không cũ hơn ngày cập nhật của truyện — lastModified mới hơn chapter mới
+ * nhất trong cache nghĩa là Drive vừa có chap mới (thêm/sửa) → phải quét lại.
+ */
+function isChaptersCacheFresh(chapters: ChapterRef[], story: StorySummary): boolean {
+  if (chapters.some((chapter) => chapter.modifiedTime === undefined)) return false
+  const cachedLatest = latestIso(...chapters.map((chapter) => chapter.modifiedTime))
+  const storyTime = new Date(story.lastModified ?? story.modifiedTime ?? '').getTime()
+  // Thiếu ngày để so (cache rỗng, Drive không trả ngày) → giữ cache như cũ
+  if (cachedLatest === undefined || Number.isNaN(storyTime)) return true
+  return storyTime <= new Date(cachedLatest).getTime()
+}
+
+/**
  * Trạng thái truyện của thư viện đang mở:
  * - list truyện: cache IndexedDB trước, gọi mạng chỉ khi force / chưa có
+ * - cache chapter quét lại khi lastModified của truyện mới hơn chap mới nhất
+ *   trong cache (owner thêm/sửa chap trên Drive) hoặc khi force
  * - KHÔNG tự động quét chapter — chỉ folder nào được USER đánh dấu là truyện
  *   (marks) mới quét (batch theo tầng, lấy mẫu nhóm), counts hiện dần
  * - folder chưa đánh dấu: hiện "Chưa phân loại", bấm vào xem nội dung để quyết định
@@ -129,22 +146,26 @@ export const useStoriesStore = defineStore('stories', {
       }
 
       if (gen !== this.gen) return
-      await this.scanMarkedStories(gen)
+      await this.refreshMarkedChapters(this.stories, gen)
     },
 
-    /** Chỉ quét chapter các folder USER đã xác nhận là truyện (chưa có cache). */
-    async scanMarkedStories(gen: number): Promise<void> {
-      const marked = this.stories.filter((story) => this.marks[story.id])
+    /**
+     * Điền counts/latest cho các folder USER đã xác nhận là truyện trong
+     * `stories` (list truyện của LibraryPage hoặc folder con của FolderPage —
+     * phải kèm `lastModified` tươi): cache chapter còn tươi thì dùng ngay,
+     * cũ hơn lastModified (owner thêm/sửa chap) hoặc chưa có thì quét lại batch.
+     */
+    async refreshMarkedChapters(stories: StorySummary[], gen: number): Promise<void> {
+      const marked = stories.filter((story) => this.marks[story.id])
       const uncached: StorySummary[] = []
       for (const story of marked) {
-      const cached = await getCache<ChapterRef[]>(chaptersKey(story.id))
-      // Cache viết trước khi chapter có modifiedTime (thiếu field) → quét lại 1 lần cho đủ
-      if (cached && cached.data.every((chapter) => chapter.modifiedTime !== undefined)) {
-        this.counts[story.id] = cached.data.length
-        this.latest[story.id] = cached.data[cached.data.length - 1]?.name ?? ''
-      } else {
-        uncached.push(story)
-      }
+        const cached = await getCache<ChapterRef[]>(chaptersKey(story.id))
+        if (cached && isChaptersCacheFresh(cached.data, story)) {
+          this.counts[story.id] = cached.data.length
+          this.latest[story.id] = cached.data[cached.data.length - 1]?.name ?? ''
+        } else {
+          uncached.push(story)
+        }
       }
 
       if (uncached.length === 0) return
@@ -175,7 +196,7 @@ export const useStoriesStore = defineStore('stories', {
       }
     },
 
-    /** USER xác nhận folder là truyện → lưu đánh dấu + quét chapter ngay. */
+    /** USER xác nhận folder là truyện → lưu đánh dấu + quét TƯƠI ngay (force). */
     async markAsStory(folderId: string): Promise<void> {
       if (this.marks[folderId]) return
       await putFolderType({ folderId, type: 'story', markedAt: Date.now() })
@@ -184,12 +205,13 @@ export const useStoriesStore = defineStore('stories', {
       delete this.groups[folderId]
       delete this.lists[folderId]
       useSyncStore().schedulePush()
-      void this.ensureChapters(this.libId, folderId).catch(() => {
+      // Cache cũ có thể là snapshot trước khi owner thêm chap mới → bỏ qua, quét lại
+      void this.ensureChapters(this.libId, folderId, { force: true }).catch(() => {
         // lỗi đã ghi vào scanErrors
       })
     },
 
-    /** Bỏ đánh dấu (user đánh nhầm) — cache giữ lại để lần sau đánh dấu lại là có ngay. */
+    /** Bỏ đánh dấu (user đánh nhầm) — cache giữ lại, lần đánh dấu lại sẽ quét tươi (force). */
     async unmarkStory(folderId: string): Promise<void> {
       await deleteFolderType(folderId)
       // Tombstone để máy khác không khôi phục lại đánh dấu đã bỏ
@@ -248,7 +270,7 @@ export const useStoriesStore = defineStore('stories', {
       storyId: string,
       options: { force?: boolean; gen?: number } = {},
     ): Promise<ChapterRef[]> {
-      if (options.force) return this.runScan(storyId, options.gen)
+      if (options.force) return this.runScan(storyId, options.gen, true)
 
       const inFlight = this.pendingScans.get(storyId)
       if (inFlight) return inFlight

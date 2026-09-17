@@ -243,77 +243,79 @@ watch(chapterId, () => {
     <NConfigProvider :theme="darkTheme" class="reader-provider">
       <!-- Toolbar tự ẩn khi cuộn xuống -->
       <div class="reader-toolbar" :class="{ hidden: !toolbarVisible }">
-        <NButton quaternary size="small" class="tb-btn" @click="backToChapters">
-          <template #icon>
-            <AppIcon name="arrow-left" :size="16" />
-          </template>
-          <span class="tb-label">Danh sách</span>
-        </NButton>
-        <NSelect
-          v-if="chapters.length"
-          :value="chapterId"
-          :options="chapterOptions"
-          :consistent-menu-width="false"
-          filterable
-          size="small"
-          class="tb-jump"
-          title="Chọn chapter (gõ tên hoặc số)"
-          @update:value="jumpToChapter"
-        />
-        <NSpin v-if="pdfLoading" :size="14" />
-        <div class="tb-spacer" />
-        <span v-if="hasPdfOption" class="tb-modes">
+        <div class="reader-toolbar-inner">
+          <NButton quaternary size="medium" class="tb-btn" @click="backToChapters">
+            <template #icon>
+              <AppIcon name="arrow-left" :size="16" />
+            </template>
+            <span class="tb-label">Danh sách</span>
+          </NButton>
+          <NSelect
+            v-if="chapters.length"
+            :value="chapterId"
+            :options="chapterOptions"
+            :consistent-menu-width="false"
+            filterable
+            size="medium"
+            class="tb-jump"
+            title="Chọn chapter (gõ tên hoặc số)"
+            @update:value="jumpToChapter"
+          />
+          <NSpin v-if="pdfLoading" :size="14" />
+          <div class="tb-spacer" />
+          <span v-if="hasPdfOption" class="tb-modes">
+            <NButton
+              size="medium"
+              secondary
+              :type="readerMode === 'images' ? 'primary' : 'default'"
+              title="Đọc từng ảnh (tải nhanh hơn)"
+              @click="readerMode = 'images'"
+            >
+              <template #icon>
+                <AppIcon name="image" :size="14" />
+              </template>
+              <span class="tb-label">Ảnh</span>
+            </NButton>
+            <NButton
+              size="medium"
+              secondary
+              :type="readerMode === 'pdf' ? 'primary' : 'default'"
+              title="Đọc file PDF trọn bộ của chapter"
+              @click="readerMode = 'pdf'"
+            >
+              <template #icon>
+                <AppIcon name="file-text" :size="14" />
+              </template>
+              <span class="tb-label">PDF</span>
+            </NButton>
+          </span>
           <NButton
-            size="small"
+            class="tb-btn"
+            size="medium"
             secondary
-            :type="readerMode === 'images' ? 'primary' : 'default'"
-            title="Đọc từng ảnh (tải nhanh hơn)"
-            @click="readerMode = 'images'"
+            :disabled="!prevChapter"
+            title="Chap trước (phím ←)"
+            @click="goToChapter(prevChapter)"
           >
             <template #icon>
-              <AppIcon name="image" :size="14" />
+              <AppIcon name="chevron-left" :size="16" />
             </template>
-            <span class="tb-label">Ảnh</span>
+            <span class="tb-label">Trước</span>
           </NButton>
           <NButton
-            size="small"
+            class="tb-btn"
+            size="medium"
             secondary
-            :type="readerMode === 'pdf' ? 'primary' : 'default'"
-            title="Đọc file PDF trọn bộ của chapter"
-            @click="readerMode = 'pdf'"
+            :disabled="!nextChapter"
+            title="Chap sau (phím →)"
+            @click="goToChapter(nextChapter)"
           >
+            <span class="tb-label">Sau</span>
             <template #icon>
-              <AppIcon name="file-text" :size="14" />
+              <AppIcon name="chevron-right" :size="16" />
             </template>
-            <span class="tb-label">PDF</span>
           </NButton>
-        </span>
-        <NButton
-          class="tb-btn"
-          size="small"
-          secondary
-          :disabled="!prevChapter"
-          title="Chap trước (phím ←)"
-          @click="goToChapter(prevChapter)"
-        >
-          <template #icon>
-            <AppIcon name="chevron-left" :size="16" />
-          </template>
-          <span class="tb-label">Trước</span>
-        </NButton>
-        <NButton
-          class="tb-btn"
-          size="small"
-          secondary
-          :disabled="!nextChapter"
-          title="Chap sau (phím →)"
-          @click="goToChapter(nextChapter)"
-        >
-          <span class="tb-label">Sau</span>
-          <template #icon>
-            <AppIcon name="chevron-right" :size="16" />
-          </template>
-        </NButton>
+        </div>
       </div>
 
       <div v-if="loading && !chapters.length" class="reader-msg">
@@ -383,7 +385,7 @@ watch(chapterId, () => {
 
         <!-- Cuối chapter -->
         <NCard class="end-card" :bordered="false">
-          <NSpace vertical align="center" size="small">
+          <NSpace vertical align="center" size="medium">
             <NText depth="3">Hết {{ chapterFiles.name }}</NText>
             <NButton
               v-if="nextChapter"
@@ -418,10 +420,6 @@ watch(chapterId, () => {
   position: sticky;
   top: 0;
   z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
   background: rgba(20, 20, 20, 0.92);
   backdrop-filter: blur(8px);
   transition: transform 0.25s ease;
@@ -430,6 +428,16 @@ watch(chapterId, () => {
 
 .reader-toolbar.hidden {
   transform: translateY(-100%);
+}
+
+/* Nội dung toolbar nằm trong container 1200px — đồng bộ với AppHeader */
+.reader-toolbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 8px 16px;
 }
 
 .tb-btn {
@@ -470,7 +478,7 @@ watch(chapterId, () => {
 }
 
 @media (max-width: 640px) {
-  .reader-toolbar {
+  .reader-toolbar-inner {
     gap: 6px;
     padding: 6px 8px;
   }

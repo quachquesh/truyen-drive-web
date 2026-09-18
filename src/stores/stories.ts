@@ -3,8 +3,9 @@ import { acceptHMRUpdate, defineStore } from 'pinia'
 import { pooledMap } from '@/lib/concurrency'
 import { DRIVE_CONCURRENCY, toErrorMessage } from '@/lib/driveApi'
 import {
-  clearChaptersCache,
+  deleteChaptersCaches,
   deleteFolderType,
+  findChaptersCacheOwners,
   getCache,
   getFolderTypes,
   putFolderType,
@@ -15,6 +16,7 @@ import {
   fetchNewChapters,
   latestIso,
   listStories,
+  parseChaptersCache,
   refreshStoryDates,
   scanStories,
   scanStory,
@@ -44,18 +46,6 @@ function isChaptersCacheFresh(chapters: ChapterRef[], story: StorySummary): bool
   // Thiếu ngày để so (cache rỗng, Drive không trả ngày) → giữ cache như cũ
   if (cachedLatest === undefined || Number.isNaN(storyTime)) return true
   return storyTime <= new Date(cachedLatest).getTime()
-}
-
-/**
- * Đọc cache chapter `chapters:${storyId}`: bản mới là `{chapters, groups}`;
- * bản cũ (bare array, trước khi có nhóm) coi như MISS → quét lại 1 lần cho đủ.
- */
-function parseChaptersCache(data: unknown): StoryScanResult | null {
-  if (!data || typeof data !== 'object' || !Array.isArray((data as StoryScanResult).chapters)) {
-    return null
-  }
-  const record = data as StoryScanResult
-  return { chapters: record.chapters, groups: record.groups ?? [] }
 }
 
 /**
@@ -426,9 +416,10 @@ export const useStoriesStore = defineStore('stories', {
 
     /**
      * USER đánh dấu folder là NHÓM chapter → con bên trong được đưa lên cùng cấp.
-     * Xóa cache chapter (không biết truyện nào chứa folder) → truyện sẽ quét lại.
+     * Chỉ xóa cache của truyện chứa folder (owner nếu biết, không thì tìm qua
+     * nội dung cache) — truyện khác không đổi hình dạng danh sách.
      */
-    async markAsGroup(folderId: string): Promise<void> {
+    async markAsGroup(folderId: string, ownerStoryId?: string): Promise<void> {
       if (this.groups[folderId]) return
       // Nhóm mới đưa con lên cùng cấp → mọi quét đang chạy với groupMarks cũ
       // đều sai (chạy xong sẽ ghi đè cache/counts bằng danh sách cũ) → vô hiệu
@@ -436,8 +427,7 @@ export const useStoriesStore = defineStore('stories', {
       this.scanning = {}
       await putFolderType({ folderId, type: 'group', markedAt: Date.now() })
       this.groups[folderId] = true
-      await clearChaptersCache()
-      this.groupsByStory = {}
+      await this.invalidateGroupOwners([folderId], ownerStoryId)
       useSyncStore().schedulePush()
     },
 
@@ -446,7 +436,7 @@ export const useStoriesStore = defineStore('stories', {
     },
 
     /** Bỏ đánh dấu TẤT CẢ nhóm của 1 truyện (nút "Hủy nhóm" trong StoryPage). */
-    async unmarkGroups(folderIds: string[]): Promise<void> {
+    async unmarkGroups(folderIds: string[], ownerStoryId?: string): Promise<void> {
       if (folderIds.length === 0) return
       // Bỏ nhóm cũng đổi hình dạng danh sách → vô hiệu quét đang chạy như markAsGroup
       this.gen++
@@ -456,9 +446,19 @@ export const useStoriesStore = defineStore('stories', {
         await putTombstone(markTombstoneKey(folderId), Date.now())
         delete this.groups[folderId]
       }
-      await clearChaptersCache()
-      this.groupsByStory = {}
+      await this.invalidateGroupOwners(folderIds, ownerStoryId)
       useSyncStore().schedulePush()
+    },
+
+    /**
+     * Xóa cache chapter + groupsByStory của đúng các truyện bị (bỏ) nhóm ảnh
+     * hưởng: owner truyền vào (nếu biết) hợp với các cache nhắc tới folder.
+     */
+    async invalidateGroupOwners(folderIds: string[], ownerStoryId?: string): Promise<void> {
+      const owners = await findChaptersCacheOwners(folderIds)
+      if (ownerStoryId) owners.add(ownerStoryId)
+      await deleteChaptersCaches([...owners])
+      for (const storyId of owners) delete this.groupsByStory[storyId]
     },
 
     /**

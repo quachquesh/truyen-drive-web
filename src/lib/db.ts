@@ -148,15 +148,55 @@ export async function clearListCache(): Promise<void> {
   await db.clear('cache')
 }
 
-/** Xóa mọi cache danh sách chapter (khi (bỏ) đánh dấu nhóm — không biết truyện chứa folder). */
-export async function clearChaptersCache(): Promise<void> {
+/** Cache chapter "nhắc tới" folder khi folder hiện là dòng chapter hoặc là nhóm đã đánh dấu. */
+function cacheMentionsFolder(data: unknown, wanted: Set<string>): boolean {
+  const hasId = (list: unknown): boolean =>
+    Array.isArray(list) &&
+    list.some((item) => {
+      const id = item && typeof item === 'object' ? (item as { id?: string }).id : undefined
+      return id !== undefined && wanted.has(id)
+    })
+  // Bản mới {chapters, groups}; bản cũ bare array coi như danh sách chapter
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    return (
+      hasId((data as { chapters?: unknown }).chapters) ||
+      hasId((data as { groups?: unknown }).groups)
+    )
+  }
+  return hasId(data)
+}
+
+/**
+ * Tìm mọi truyện có cache chapter nhắc tới folderIds — (bỏ) đánh dấu nhóm chỉ
+ * đổi hình dạng danh sách của các truyện này nên chỉ cần xóa cache của chúng.
+ * Cache không nhắc tới folder thì không thể bị ảnh hưởng → khỏi xóa.
+ */
+export async function findChaptersCacheOwners(folderIds: string[]): Promise<Set<string>> {
+  const owners = new Set<string>()
+  if (folderIds.length === 0) return owners
+  const wanted = new Set(folderIds)
+  const db = await getDb()
+  const tx = db.transaction('cache')
+  const store = tx.objectStore('cache')
+  for (const key of await store.getAllKeys()) {
+    const cacheKey = String(key)
+    if (!cacheKey.startsWith('chapters:')) continue
+    const record = (await store.get(key)) as CacheRecord | undefined
+    if (record && cacheMentionsFolder(record.data, wanted)) {
+      owners.add(cacheKey.slice('chapters:'.length))
+    }
+  }
+  await tx.done
+  return owners
+}
+
+/** Xóa cache chapter của đúng các truyện đưa vào. */
+export async function deleteChaptersCaches(storyIds: string[]): Promise<void> {
+  if (storyIds.length === 0) return
   const db = await getDb()
   const tx = db.transaction('cache', 'readwrite')
   const store = tx.objectStore('cache')
-  const keys = await store.getAllKeys()
-  await Promise.all(
-    keys.filter((key) => String(key).startsWith('chapters:')).map((key) => store.delete(key)),
-  )
+  await Promise.all(storyIds.map((storyId) => store.delete(`chapters:${storyId}`)))
   await tx.done
 }
 

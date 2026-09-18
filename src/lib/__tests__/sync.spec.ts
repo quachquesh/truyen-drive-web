@@ -193,7 +193,30 @@ const folderTypeStore = new Map<
   { folderId: string; type: 'story' | 'group'; markedAt: number }
 >()
 const tombstoneStore = new Map<string, { key: string; deletedAt: number }>()
-const clearChaptersCache = vi.fn<() => Promise<void>>(async () => undefined)
+/** Mirror cache chapter: key `chapters:<storyId>` → data (bản mới {chapters, groups}) */
+const cacheStore = new Map<string, unknown>()
+
+/** Mirror logic thật: tìm truyện có cache nhắc tới folder (trong chapters hoặc groups). */
+const findChaptersCacheOwners = vi.fn<(folderIds: string[]) => Promise<Set<string>>>(
+  async (folderIds) => {
+    const wanted = new Set(folderIds)
+    const owners = new Set<string>()
+    for (const [key, data] of cacheStore) {
+      if (!key.startsWith('chapters:')) continue
+      const bare = Array.isArray(data) ? (data as Array<{ id: string }>) : null
+      const record = bare ? null : (data as { chapters?: Array<{ id: string }>; groups?: Array<{ id: string }> })
+      const chapters = bare ?? record?.chapters ?? []
+      const groups = record?.groups ?? []
+      if (chapters.some((c) => wanted.has(c.id)) || groups.some((g) => wanted.has(g.id))) {
+        owners.add(key.slice('chapters:'.length))
+      }
+    }
+    return owners
+  },
+)
+const deleteChaptersCaches = vi.fn<(storyIds: string[]) => Promise<void>>(async (storyIds) => {
+  for (const storyId of storyIds) cacheStore.delete(`chapters:${storyId}`)
+})
 
 vi.mock('../db', () => ({
   getLibraries: vi.fn<() => Promise<LibraryConfig[]>>(async () =>
@@ -233,7 +256,8 @@ vi.mock('../db', () => ({
   getTombstones: vi.fn<
     () => Promise<Array<{ key: string; deletedAt: number }>>
   >(async () => [...tombstoneStore.values()]),
-  clearChaptersCache: () => clearChaptersCache(),
+  findChaptersCacheOwners: (folderIds: string[]) => findChaptersCacheOwners(folderIds),
+  deleteChaptersCaches: (storyIds: string[]) => deleteChaptersCaches(storyIds),
 }))
 
 let uuidSeq = 0
@@ -243,6 +267,7 @@ beforeEach(() => {
   progressStore.clear()
   folderTypeStore.clear()
   tombstoneStore.clear()
+  cacheStore.clear()
   uuidSeq = 0
   vi.stubGlobal('crypto', { randomUUID: () => `uuid-mới-${++uuidSeq}` })
 })
@@ -388,9 +413,18 @@ describe('applySync', () => {
     expect(progressStore.size).toBe(0)
   })
 
-  it('marks: đánh dấu mới hơn thắng, đánh dấu biến mất bị xóa + clear cache chapter', async () => {
+  it('marks: đánh dấu mới hơn thắng, đánh dấu biến mất bị xóa + xóa cache ĐÚNG truyện chứa nhóm', async () => {
     seedLocal()
     folderTypeStore.set('M2', { folderId: 'M2', type: 'group', markedAt: 500 })
+    // Cache của truyện chứa nhóm M2 + cache truyện khác không liên quan
+    cacheStore.set('chapters:S1', {
+      chapters: [{ id: 'M2', name: '0-80', modifiedTime: '2026-09-15T08:00:00.000Z' }],
+      groups: [],
+    })
+    cacheStore.set('chapters:S9', {
+      chapters: [{ id: 's9-c1', name: '1', modifiedTime: '2026-09-15T08:00:00.000Z' }],
+      groups: [],
+    })
 
     const result = await applySync(
       payload({
@@ -402,7 +436,27 @@ describe('applySync', () => {
     expect(result.changed).toBe(true)
     expect(folderTypeStore.size).toBe(1)
     expect(folderTypeStore.get('M1')?.markedAt).toBe(3000)
-    expect(clearChaptersCache).toHaveBeenCalled()
+    expect(cacheStore.has('chapters:S1')).toBe(false) // truyện chứa nhóm bị xóa cache
+    expect(cacheStore.has('chapters:S9')).toBe(true) // truyện khác giữ nguyên
+  })
+
+  it('marks: đánh dấu STORY từ sync KHÔNG đụng cache chapter (không đổi hình dạng danh sách)', async () => {
+    seedLocal()
+    cacheStore.set('chapters:S1', {
+      chapters: [{ id: 's1-c1', name: '1', modifiedTime: '2026-09-15T08:00:00.000Z' }],
+      groups: [],
+    })
+
+    const result = await applySync(
+      payload({
+        libraries: [lib('F1', 'Kho một', 100)],
+        marks: [mark('M9', 'story', 3000)], // mark story mới
+      }),
+    )
+
+    expect(result.changed).toBe(true)
+    expect(cacheStore.has('chapters:S1')).toBe(true) // không xóa cache nào
+    expect(deleteChaptersCaches).not.toHaveBeenCalled()
   })
 
   it('payload trùng local → changed = false, không đụng gì', async () => {
@@ -418,6 +472,7 @@ describe('applySync', () => {
 
     expect(result.changed).toBe(false)
     expect(result.progressChanged).toBe(false)
-    expect(clearChaptersCache).not.toHaveBeenCalled()
+    expect(findChaptersCacheOwners).not.toHaveBeenCalled()
+    expect(deleteChaptersCaches).not.toHaveBeenCalled()
   })
 })

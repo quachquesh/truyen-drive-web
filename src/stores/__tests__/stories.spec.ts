@@ -129,7 +129,32 @@ const folderTypeStore = new Map<
 >()
 const cacheStore = new Map<string, { key: string; data: unknown; fetchedAt: number }>()
 const tombstoneStore = new Map<string, { key: string; deletedAt: number }>()
-const clearChaptersCache = vi.fn<() => Promise<void>>(async () => undefined)
+
+/** Mirror logic thật của findChaptersCacheOwners: cache nhắc tới folder trong chapters/groups. */
+const findChaptersCacheOwners = vi.fn<(folderIds: string[]) => Promise<Set<string>>>(
+  async (folderIds) => {
+    const wanted = new Set(folderIds)
+    const owners = new Set<string>()
+    for (const [key, record] of cacheStore) {
+      if (!key.startsWith('chapters:')) continue
+      const bare = Array.isArray(record.data)
+        ? (record.data as Array<{ id: string }>)
+        : null
+      const parsed = bare
+        ? null
+        : (record.data as { chapters?: Array<{ id: string }>; groups?: Array<{ id: string }> })
+      const chapters = bare ?? parsed?.chapters ?? []
+      const groups = parsed?.groups ?? []
+      if (chapters.some((c) => wanted.has(c.id)) || groups.some((g) => wanted.has(g.id))) {
+        owners.add(key.slice('chapters:'.length))
+      }
+    }
+    return owners
+  },
+)
+const deleteChaptersCaches = vi.fn<(storyIds: string[]) => Promise<void>>(async (storyIds) => {
+  for (const storyId of storyIds) cacheStore.delete(`chapters:${storyId}`)
+})
 vi.mock('@/lib/db', () => ({
   getCache: vi.fn<
     (key: string) => Promise<{ key: string; data: unknown; fetchedAt: number } | undefined>
@@ -139,7 +164,8 @@ vi.mock('@/lib/db', () => ({
     // của Pinia (DataCloneError làm mất cache ngày một cách im lặng)
     cacheStore.set(key, { key, data: structuredClone(data), fetchedAt: Date.now() })
   }),
-  clearChaptersCache: () => clearChaptersCache(),
+  findChaptersCacheOwners: (folderIds: string[]) => findChaptersCacheOwners(folderIds),
+  deleteChaptersCaches: (storyIds: string[]) => deleteChaptersCaches(storyIds),
   getFolderTypes: vi.fn<
     () => Promise<Array<{ folderId: string; type: 'story' | 'group' | 'list'; markedAt: number }>>
   >(async () => [...folderTypeStore.values()]),
@@ -735,9 +761,9 @@ describe('storiesStore.refreshMarkedChapters (folder con đã đánh dấu — w
     ])
     await refresh
 
-    // Danh sách 3-chapter tính theo groupMarks cũ bị vứt — cache/counts giữ nguyên
-    const cached = cacheStore.get('chapters:story-9')?.data as StoryScanResult | undefined
-    expect(cached?.chapters.map((chapter) => chapter.name)).toEqual(['1', '2'])
+    // Danh sách 3-chapter tính theo groupMarks cũ bị vứt — cache bị xóa scoped
+    // ngay lúc đánh dấu (truyện chứa folder), counts/latest không bị ghi đè
+    expect(cacheStore.has('chapters:story-9')).toBe(false)
     expect(storiesStore.counts['story-9']).toBeUndefined()
     expect(storiesStore.latest['story-9']).toBeUndefined()
   })
@@ -792,15 +818,33 @@ describe('storiesStore.markAsStory / unmarkStory / markAsGroup / markAsList', ()
     })
   })
 
-  it('markAsGroup lưu type group + xóa cache chapter để quét lại', async () => {
+  it('markAsGroup lưu type group + xóa ĐÚNG cache truyện chứa folder (discovery qua chapters)', async () => {
     setupLibrary()
     const storiesStore = useStoriesStore()
     await storiesStore.openLibrary('uuid-noi-bo')
+    // Cache truyện chứa folder sắp đánh dấu + cache truyện khác không liên quan
+    cacheStore.set('chapters:story-1', {
+      key: 'chapters:story-1',
+      data: {
+        chapters: [{ id: 'story-1-c1', name: '1', modifiedTime: '2026-09-15T08:00:00.000Z' }],
+        groups: [],
+      },
+      fetchedAt: 1,
+    })
+    cacheStore.set('chapters:story-2', {
+      key: 'chapters:story-2',
+      data: {
+        chapters: [{ id: 'story-2-c1', name: '1', modifiedTime: '2026-09-15T08:00:00.000Z' }],
+        groups: [],
+      },
+      fetchedAt: 1,
+    })
 
     await storiesStore.markAsGroup('story-1-c1')
     expect(folderTypeStore.get('story-1-c1')?.type).toBe('group')
     expect(storiesStore.groups['story-1-c1']).toBe(true)
-    expect(clearChaptersCache).toHaveBeenCalled()
+    expect(cacheStore.has('chapters:story-1')).toBe(false) // xóa đúng truyện chứa folder
+    expect(cacheStore.has('chapters:story-2')).toBe(true) // truyện khác giữ nguyên
 
     // quét lần sau truyền groupMarks
     await storiesStore.markAsStory('story-1')
@@ -822,7 +866,7 @@ describe('storiesStore.markAsStory / unmarkStory / markAsGroup / markAsList', ()
     expect(folderTypeStore.get('drop-truyen')?.type).toBe('list')
     expect(storiesStore.lists['drop-truyen']).toBe(true)
     expect(storiesStore.groups['drop-truyen']).toBeUndefined()
-    expect(clearChaptersCache).not.toHaveBeenCalled()
+    expect(deleteChaptersCaches).not.toHaveBeenCalled()
 
     // quét truyện KHÔNG truyền folder đánh dấu list vào groupMarks
     await storiesStore.markAsStory('story-1')
@@ -875,7 +919,7 @@ describe('storiesStore.markAsStory / unmarkStory / markAsGroup / markAsList', ()
 })
 
 describe('storiesStore.unmarkGroups (nút Hủy nhóm — StoryPage)', () => {
-  it('bỏ đánh dấu nhiều nhóm cùng lúc: xóa folderTypes + tombstone + reset groupsByStory', async () => {
+  it('bỏ đánh dấu nhiều nhóm cùng lúc: xóa folderTypes + tombstone + reset ĐÚNG groupsByStory của truyện', async () => {
     setupLibrary()
     const storiesStore = useStoriesStore()
     await storiesStore.markAsGroup('story-1-grp1')
@@ -884,17 +928,70 @@ describe('storiesStore.unmarkGroups (nút Hủy nhóm — StoryPage)', () => {
       { id: 'story-1-grp1', name: '0-80' },
       { id: 'story-1-grp2', name: '81-160' },
     ]
+    storiesStore.groupsByStory['story-2'] = [{ id: 'story-2-grp', name: '0-80' }]
 
-    await storiesStore.unmarkGroups(['story-1-grp1', 'story-1-grp2'])
+    await storiesStore.unmarkGroups(['story-1-grp1', 'story-1-grp2'], 'story-1')
 
     expect(folderTypeStore.has('story-1-grp1')).toBe(false)
     expect(folderTypeStore.has('story-1-grp2')).toBe(false)
     expect(storiesStore.groups['story-1-grp1']).toBeUndefined()
     expect(storiesStore.groups['story-1-grp2']).toBeUndefined()
-    expect(storiesStore.groupsByStory).toEqual({})
+    expect(storiesStore.groupsByStory['story-1']).toBeUndefined() // xóa đúng truyện
+    expect(storiesStore.groupsByStory['story-2']).toEqual([{ id: 'story-2-grp', name: '0-80' }])
     expect([...tombstoneStore.keys()]).toEqual(
       expect.arrayContaining(['mark:story-1-grp1', 'mark:story-1-grp2']),
     )
+  })
+
+  it('unmarkGroup KHÔNG có owner (FolderPage) → discovery qua groups trong cache, xóa đúng truyện', async () => {
+    setupLibrary()
+    const storiesStore = useStoriesStore()
+    folderTypeStore.set('story-9-grp', { folderId: 'story-9-grp', type: 'group', markedAt: 1 })
+    await storiesStore.loadMarks()
+    // Cache 2 truyện: story-9 có nhóm sắp bỏ, story-2 không liên quan
+    cacheStore.set('chapters:story-9', {
+      key: 'chapters:story-9',
+      data: {
+        chapters: [{ id: 'story-9-c1', name: '1', modifiedTime: '2026-09-16T08:00:00.000Z' }],
+        groups: [{ id: 'story-9-grp', name: '0-80' }],
+      },
+      fetchedAt: 1,
+    })
+    cacheStore.set('chapters:story-2', {
+      key: 'chapters:story-2',
+      data: {
+        chapters: [{ id: 'story-2-c1', name: '1', modifiedTime: '2026-09-16T08:00:00.000Z' }],
+        groups: [],
+      },
+      fetchedAt: 1,
+    })
+
+    await storiesStore.unmarkGroup('story-9-grp')
+
+    expect(folderTypeStore.has('story-9-grp')).toBe(false)
+    expect(storiesStore.groups['story-9-grp']).toBeUndefined()
+    expect(cacheStore.has('chapters:story-9')).toBe(false) // xóa đúng truyện chứa nhóm
+    expect(cacheStore.has('chapters:story-2')).toBe(true) // truyện khác giữ nguyên
+  })
+
+  it('markAsGroup có owner → chỉ xóa cache truyện đó, không cần discovery trúng', async () => {
+    setupLibrary()
+    const storiesStore = useStoriesStore()
+    cacheStore.set('chapters:story-2', {
+      key: 'chapters:story-2',
+      data: {
+        chapters: [{ id: 'story-2-c1', name: '1', modifiedTime: '2026-09-16T08:00:00.000Z' }],
+        groups: [],
+      },
+      fetchedAt: 1,
+    })
+    storiesStore.groupsByStory['story-1'] = [{ id: 'story-1-grp', name: '0-80' }]
+
+    await storiesStore.markAsGroup('story-1-grp', 'story-1')
+
+    expect(storiesStore.groups['story-1-grp']).toBe(true)
+    expect(storiesStore.groupsByStory['story-1']).toBeUndefined() // reset đúng truyện
+    expect(cacheStore.has('chapters:story-2')).toBe(true) // truyện khác không đụng
   })
 
   it('unmarkGroup (1 nhóm — FolderPage) chạy qua unmarkGroups', async () => {

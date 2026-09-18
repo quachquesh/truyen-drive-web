@@ -49,6 +49,19 @@ export interface StoryScanResult {
   groups: GroupRef[]
 }
 
+/**
+ * Đọc dữ liệu cache chapter `chapters:${storyId}`: bản mới là `{chapters, groups}`;
+ * bản cũ (bare array, trước khi có nhóm) trả null để caller coi như MISS → quét
+ * lại 1 lần cho đủ. Dùng chung cho store (runScan/refreshMarkedChapters) và
+ * LibraryPage (applyLiveProgress) — KHÔNG đọc cache chapter chỗ nào không qua hàm này.
+ */
+export function parseChaptersCache(data: unknown): StoryScanResult | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+  const record = data as Partial<StoryScanResult>
+  if (!Array.isArray(record.chapters)) return null
+  return { chapters: record.chapters, groups: Array.isArray(record.groups) ? record.groups : [] }
+}
+
 /** Chapter + danh sách file đã resolve (image-mode hoặc pdf-mode). */
 export interface ChapterWithFiles extends ChapterRef {
   files: ChapterFile[]

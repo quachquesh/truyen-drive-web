@@ -7,7 +7,7 @@ import AppIcon from "@/components/AppIcon.vue";
 import StoryCard from "@/components/StoryCard.vue";
 import { getAllProgress, getCache, type ProgressRecord } from "@/lib/db";
 import { applyLiveProgress } from "@/lib/progress";
-import type { ChapterRef } from "@/lib/scanner";
+import { parseChaptersCache, type StoryScanResult } from "@/lib/scanner";
 import { useLibraryStore } from "@/stores/library";
 import { useStoriesStore } from "@/stores/stories";
 import { useSyncStore } from "@/stores/sync";
@@ -71,8 +71,8 @@ async function refreshProgress(): Promise<void> {
     // Tính lại n/total theo danh sách chapter hiện tại trong cache — đánh dấu
     // nhóm sau khi đọc có thể chèn chapter làm lệch số thứ tự đã ghi
     const storyId = record.key.slice(prefix.length);
-    const cached = await getCache<ChapterRef[]>(`chapters:${storyId}`);
-    map[storyId] = applyLiveProgress(record, cached?.data);
+    const cached = await getCache<StoryScanResult>(`chapters:${storyId}`);
+    map[storyId] = applyLiveProgress(record, parseChaptersCache(cached?.data)?.chapters);
   }
   progressByStory.value = map;
 }

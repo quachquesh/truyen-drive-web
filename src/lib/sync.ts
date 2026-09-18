@@ -9,10 +9,11 @@
  * tombstone kèm thời điểm, nếu không lần pull sau nó sẽ "hồi sinh" từ máy khác.
  */
 import {
-  clearChaptersCache,
+  deleteChaptersCaches,
   deleteFolderType,
   deleteLibrary as dbDeleteLibrary,
   deleteProgress,
+  findChaptersCacheOwners,
   getAllProgress,
   getFolderTypes,
   getLibraries,
@@ -301,10 +302,12 @@ export async function applySync(payload: SyncPayload): Promise<ApplyResult> {
   const markByFolder = new Map(localMarks.map((mark) => [mark.folderId, mark]))
   const keepMarkFolders = new Set(payload.marks.map((mark) => mark.folderId))
   let marksChanged = false
+  const groupChangedIds: string[] = []
   for (const mark of localMarks) {
     if (!keepMarkFolders.has(mark.folderId)) {
       await deleteFolderType(mark.folderId)
       marksChanged = true
+      if (mark.type === 'group') groupChangedIds.push(mark.folderId)
     }
   }
   for (const mark of payload.marks) {
@@ -312,12 +315,18 @@ export async function applySync(payload: SyncPayload): Promise<ApplyResult> {
     if (!local || mark.markedAt > local.markedAt) {
       await putFolderType({ folderId: mark.folderId, type: mark.type, markedAt: mark.markedAt })
       marksChanged = true
+      if (mark.type === 'group' || local?.type === 'group') groupChangedIds.push(mark.folderId)
     }
   }
   if (marksChanged) {
-    // Đánh dấu nhóm ảnh hưởng cách quét chapter → xóa cache chapter cho chắc
-    await clearChaptersCache()
     changed = true
+    // Chỉ đánh dấu NHÓM đổi hình dạng danh sách chapter → xóa đúng cache của
+    // các truyện nhắc tới các folder đó (tìm trong nội dung cache); mark
+    // story/list không đụng cache của truyện nào
+    if (groupChangedIds.length > 0) {
+      const owners = await findChaptersCacheOwners(groupChangedIds)
+      await deleteChaptersCaches([...owners])
+    }
   }
 
   // Tiến độ đọc: xóa record cũ hơn lần wipe, ghi record mới hơn local

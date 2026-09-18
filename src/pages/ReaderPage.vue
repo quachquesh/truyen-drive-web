@@ -215,7 +215,7 @@ function backToChapters(): void {
 async function markGroupAndBack(): Promise<void> {
   const current = chapter.value;
   if (!current) return;
-  await storiesStore.markAsGroup(current.id);
+  await storiesStore.markAsGroup(current.id, storyId.value);
   await router.replace({
     name: "story",
     params: { libId: libId.value, storyId: storyId.value },

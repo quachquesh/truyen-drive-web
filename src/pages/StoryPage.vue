@@ -159,7 +159,7 @@ function markGroup(chapter: ChapterRef): void {
     positiveText: 'Đánh dấu nhóm',
     negativeText: 'Hủy',
     onPositiveClick: async () => {
-      await storiesStore.markAsGroup(chapter.id)
+      await storiesStore.markAsGroup(chapter.id, storyId.value)
       await load(true)
     },
   })
@@ -182,7 +182,10 @@ function unmarkAllGroups(): void {
     positiveText: 'Hủy nhóm',
     negativeText: 'Để lại',
     onPositiveClick: async () => {
-      await storiesStore.unmarkGroups(groups.map((group) => group.id))
+      await storiesStore.unmarkGroups(
+        groups.map((group) => group.id),
+        storyId.value,
+      )
       await load(true)
     },
   })

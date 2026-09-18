@@ -122,6 +122,7 @@ import {
   fetchNewChapters,
   latestIso,
   listStories,
+  parseChaptersCache,
   refreshStoryDates,
   scanStories,
   scanStory,
@@ -489,5 +490,36 @@ describe('latestIso', () => {
   it('không có giá trị hợp lệ nào → undefined', () => {
     expect(latestIso()).toBeUndefined()
     expect(latestIso(undefined, 'garbage')).toBeUndefined()
+  })
+})
+
+describe('parseChaptersCache (đọc cache chapter 2 shape)', () => {
+  it('bản mới {chapters, groups} → parse đủ 2 mảng', () => {
+    const result = parseChaptersCache({
+      chapters: [{ id: 'c1', name: '1', modifiedTime: '2026-09-15T08:00:00.000Z' }],
+      groups: [{ id: 'g1', name: '0-80' }],
+    })
+    expect(result).toEqual({
+      chapters: [{ id: 'c1', name: '1', modifiedTime: '2026-09-15T08:00:00.000Z' }],
+      groups: [{ id: 'g1', name: '0-80' }],
+    })
+  })
+
+  it('thiếu groups → điền mảng rỗng', () => {
+    const result = parseChaptersCache({ chapters: [] })
+    expect(result).toEqual({ chapters: [], groups: [] })
+  })
+
+  // Regression: LibraryPage từng truyền cache thô vào applyLiveProgress —
+  // bare array KHÔNG phải {chapters, groups} → phải trả null chứ không phải mảng
+  it('bản cũ bare array → null (caller coi như miss, không đưa vào applyLiveProgress)', () => {
+    const legacy: ChapterRef[] = [{ id: 'c1', name: '1', modifiedTime: '2026-09-15T08:00:00.000Z' }]
+    expect(parseChaptersCache(legacy)).toBeNull()
+  })
+
+  it('dữ liệu rác / thiếu chapters → null', () => {
+    expect(parseChaptersCache(null)).toBeNull()
+    expect(parseChaptersCache('oops')).toBeNull()
+    expect(parseChaptersCache({ groups: [] })).toBeNull()
   })
 })

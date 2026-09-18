@@ -4,6 +4,13 @@ Các thay đổi đáng chú ý của project được ghi ở file này theo fo
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-09-19
+
+### Fixed
+
+- Bấm "Làm mới" ở trang kho/thư mục làm ngày cập nhật trên card truyện nhảy về ngày sai của folder và đứng yên ở đó (phải vào lại trang mới thấy đúng) — dữ liệu vẫn ghi đúng nhưng giao diện không được báo để vẽ lại; giờ ngày cập nhật ngay sau khi làm mới, kể cả truyện chưa phân loại
+- "Làm mới" giờ cũng tính ngày folder truyện bị sửa trực tiếp (đổi tên...) — trước đó loại thay đổi này chỉ hiện đúng khi app quét lần đầu
+
 ## [1.2.0] — 2026-09-18
 
 ### Added

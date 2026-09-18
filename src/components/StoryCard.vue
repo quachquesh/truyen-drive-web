@@ -247,4 +247,13 @@ const modifiedText = computed(() => formatDate(props.story.lastModified ?? props
 .mark-btn:hover {
   opacity: 1;
 }
+
+/* Mobile: nút icon cần vùng chạm to hơn (44px là chuẩn, 34px là compromise
+ * giữ meta row gọn — card vốn bấm được cả miền) */
+@media (max-width: 640px) {
+  .folder-btn,
+  .mark-btn {
+    padding: 6px 8px;
+  }
+}
 </style>

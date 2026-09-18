@@ -59,7 +59,7 @@ Triết lý của project: **mọi dữ liệu thuộc về bạn**. Ứng dụn
 ### Cache & hiệu năng
 
 - **Cache IndexedDB**: danh sách truyện/chapter, danh sách file, blob ảnh/PDF, tiến độ — đọc lại không tốn mạng; xóa từng loại trong Cài đặt
-- Quét kho tiết kiệm request (batch nhiều folder 1 query, semaphore 4 request, tự **backoff khi 403/429** rate-limit)
+- Quét kho tiết kiệm request: 1 request lấy danh sách (hiện ngay), quét hợp nhất 1 lượt ngày + chapter (batch nhiều folder 1 query, 6 request song song), mở lại kho/folder gần như 0 request, **Làm mới** chỉ lấy phần mới hơn mốc cache, tự **backoff khi 403/429** rate-limit
 - Kho bật _"Viewers can't download"_ vẫn đọc được: tự fallback sang bản preview do Google render (~2048px)
 
 ### Giao diện
@@ -164,7 +164,7 @@ src/
 └── router/index.ts      # route + auth guard
 ```
 
-Drive giới hạn ~12 request/giây/user — scanner dùng semaphore 4 + retry backoff, mọi kết quả quét được cache nên chỉ chậm lần đầu.
+Drive giới hạn ~12 request/giây/user — listing giới hạn 6 request song song + retry backoff, mọi kết quả quét được cache và lần sau chỉ lấy phần mới hơn mốc nên chỉ chậm lần đầu.
 
 Chi tiết luồng dữ liệu (token, quét, cache, đồng bộ): **[docs/architecture.md](docs/architecture.md)**.
 

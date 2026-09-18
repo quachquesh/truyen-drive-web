@@ -1,6 +1,7 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
 
-import { toErrorMessage } from '@/lib/driveApi'
+import { pooledMap } from '@/lib/concurrency'
+import { DRIVE_CONCURRENCY, toErrorMessage } from '@/lib/driveApi'
 import {
   clearChaptersCache,
   deleteFolderType,
@@ -11,10 +12,13 @@ import {
   setCache,
 } from '@/lib/db'
 import {
+  fetchNewChapters,
   latestIso,
-  scanLibraryStories,
+  listStories,
+  refreshStoryDates,
   scanStories,
   scanStory,
+  walkLibrary,
   type ChapterRef,
   type StorySummary,
 } from '@/lib/scanner'
@@ -24,6 +28,7 @@ import { useSyncStore } from './sync'
 
 const storiesKey = (libId: string): string => `stories:${libId}`
 const chaptersKey = (storyId: string): string => `chapters:${storyId}`
+const folderKey = (folderId: string): string => `folder:${folderId}`
 
 /**
  * Cache chapter dùng được khi đủ modifiedTime (đời cache cũ thiếu field) và
@@ -41,17 +46,20 @@ function isChaptersCacheFresh(chapters: ChapterRef[], story: StorySummary): bool
 
 /**
  * Trạng thái truyện của thư viện đang mở:
- * - list truyện: cache IndexedDB trước, gọi mạng chỉ khi force / chưa có
- * - cache chapter quét lại khi lastModified của truyện mới hơn chap mới nhất
- *   trong cache (owner thêm/sửa chap trên Drive) hoặc khi force
+ * - list truyện: cache IndexedDB trước, gọi mạng chỉ khi force / chưa có;
+ *   khi phải gọi thì chỉ 1 request lấy danh sách — card hiện ngay, không chờ quét
+ * - cache chapter: quét hợp nhất 1 lượt khi lạnh (walkStories), còn tươi thì
+ *   dùng ngay, cũ hơn lastModified thì chỉ lấy PHẦN MỚI (fetchNewChapters)
  * - KHÔNG tự động quét chapter — chỉ folder nào được USER đánh dấu là truyện
- *   (marks) mới quét (batch theo tầng, lấy mẫu nhóm), counts hiện dần
+ *   (marks) mới quét, counts hiện dần theo từng tầng
  * - folder chưa đánh dấu: hiện "Chưa phân loại", bấm vào xem nội dung để quyết định
  * - đánh dấu "list" (danh sách nhiều truyện) chỉ là nhãn — không ảnh hưởng quét
  */
 export const useStoriesStore = defineStore('stories', {
   state: () => ({
     libId: '',
+    /** Cache key của view đang mở (stories:… / folder:…) — đổi view là reset danh sách */
+    viewKey: '',
     stories: [] as StorySummary[],
     listLoading: false,
     listError: '',
@@ -97,9 +105,42 @@ export const useStoriesStore = defineStore('stories', {
     },
 
     async openLibrary(libId: string, options: { force?: boolean } = {}): Promise<void> {
-      const gen = ++this.gen
       this.libId = libId
-      this.stories = []
+      // libId là UUID nội bộ — phải tra folderId Drive tương ứng trong library store
+      const libraryStore = useLibraryStore()
+      const folderId = libraryStore.libraries.find((lib) => lib.id === libId)?.folderId
+      if (!folderId) {
+        this.listError = 'Không tìm thấy kho truyện (đã bị xóa?)'
+        this.listLoading = false
+        return
+      }
+      await this.openListing(storiesKey(libId), folderId, options)
+    },
+
+    /** Mở 1 folder bên trong kho như danh sách truyện (FolderPage) — cùng luồng openLibrary. */
+    async openFolder(
+      libId: string,
+      folderId: string,
+      options: { force?: boolean } = {},
+    ): Promise<void> {
+      this.libId = libId
+      await this.openListing(folderKey(folderId), folderId, options)
+    },
+
+    /**
+     * Luồng mở danh sách truyện dùng chung (kho hoặc folder): cache IndexedDB
+     * trước — có cache ngày là Làm mới chỉ lấy phần thay đổi; không thì 1
+     * request lấy danh sách (hiện card ngay) rồi quét hợp nhất ngầm.
+     */
+    async openListing(
+      cacheKey: string,
+      rootFolderId: string,
+      options: { force?: boolean } = {},
+    ): Promise<void> {
+      const gen = ++this.gen
+      // Đổi view (kho khác / folder khác) → xóa danh sách cũ; Làm mới cùng view → giữ
+      if (this.viewKey !== cacheKey) this.stories = []
+      this.viewKey = cacheKey
       this.counts = {}
       this.latest = {}
       this.scanning = {}
@@ -109,21 +150,24 @@ export const useStoriesStore = defineStore('stories', {
 
       await this.loadMarks()
 
-      // libId là UUID nội bộ — phải tra folderId Drive tương ứng trong library store
-      const libraryStore = useLibraryStore()
-      const folderId = libraryStore.libraries.find((lib) => lib.id === libId)?.folderId
-      if (!folderId) {
-        this.listError = 'Không tìm thấy kho truyện (đã bị xóa?)'
-        this.listLoading = false
-        return
-      }
-
+      // Mảng RAW từ scanner — cache bắt buộc ghi bản này: IndexedDB serialize bằng
+      // structured clone, KHÔNG chấp nhận reactive proxy của Pinia (DataCloneError)
+      let freshStories: StorySummary[] | null = null
+      /** lastModified cũ theo id — có khi Làm mới (force) để đi đường incremental */
+      let knownDates: Map<string, string> | null = null
       try {
         let staleCache = false
-        if (!options.force) {
-          const cached = await getCache<StorySummary[]>(storiesKey(libId))
-          if (gen !== this.gen) return
-          if (cached) {
+        // Đọc cache trước cả khi force — cần mốc cũ cho incremental
+        const cached = await getCache<StorySummary[]>(cacheKey)
+        if (gen !== this.gen) return
+        if (cached) {
+          if (options.force) {
+            if (cached.data.every((story) => story.lastModified !== undefined)) {
+              knownDates = new Map(
+                cached.data.map((story) => [story.id, story.lastModified as string]),
+              )
+            }
+          } else {
             this.stories = cached.data
             // Cache viết trước khi có modifiedTime/lastModified (thiếu field) → lấy lại 1 lần cho đủ
             staleCache = cached.data.some(
@@ -133,46 +177,172 @@ export const useStoriesStore = defineStore('stories', {
         }
 
         if (options.force || staleCache || this.stories.length === 0) {
-          const stories = await scanLibraryStories(folderId, { groupMarks: this.groupMarkSet() })
+          // Bước 1: 1 request lấy danh sách → hiện card NGAY, không chờ quét sâu
+          freshStories = await listStories(rootFolderId)
           if (gen !== this.gen) return
-          this.stories = stories
-          await setCache(storiesKey(libId), stories)
+          this.stories = freshStories
+          this.listLoading = false
+          await setCache(cacheKey, freshStories)
+        } else {
+          this.listLoading = false
         }
       } catch (error) {
         if (gen !== this.gen) return
         this.listError = toErrorMessage(error)
-      } finally {
-        if (gen === this.gen) this.listLoading = false
+        this.listLoading = false
+        return
       }
 
       if (gen !== this.gen) return
-      await this.refreshMarkedChapters(this.stories, gen)
+
+      // Danh sách đã hiển thị — phần sau chỉ là metadata/chapter: lỗi phải được
+      // nhìn thấy ở console thay vì bị nuốt im lặng (đã từng mất cache ngày vì thế)
+      try {
+        if (!freshStories) {
+          // Warm: danh sách từ cache — 0 request danh sách, chỉ chapter incremental
+          await this.refreshMarkedChapters(this.stories, gen)
+          return
+        }
+
+        if (knownDates) {
+          // Làm mới: gắn ngày cũ vào danh sách mới rồi chỉ lấy PHẦN THAY ĐỔI —
+          // ~vài request nhỏ thay vì quét lại toàn kho
+          for (const story of freshStories) story.lastModified = knownDates.get(story.id)
+          const toWalk = freshStories.filter((story) => story.lastModified === undefined)
+          try {
+            const changed = await refreshStoryDates(freshStories)
+            if (gen !== this.gen) return
+            for (const [storyId, lastModified] of changed) {
+              const story = freshStories.find((item) => item.id === storyId)
+              if (story) story.lastModified = lastModified
+            }
+          } catch (error) {
+            // Incremental lỗi (mạng/quota) → fallback quét full như cũ
+            console.error('[stories] Làm mới incremental lỗi — quét lại toàn bộ', error)
+            toWalk.length = 0
+            toWalk.push(...freshStories)
+          }
+          // Truyện mới xuất hiện trong kho → quét hợp nhất full cho phần đó
+          await this.walkStories(toWalk, gen)
+          if (gen !== this.gen) return
+          // Truyện đánh dấu có ngày mới hơn chapter cache → fetchNewChapters
+          await this.refreshMarkedChapters(this.stories, gen)
+        } else {
+          // Cold thật (chưa có cache / xóa danh sách đã lưu): quét hợp nhất đầy đủ
+          await this.walkStories(freshStories, gen)
+          if (gen !== this.gen) return
+        }
+        await setCache(cacheKey, freshStories)
+      } catch (error) {
+        console.error('[stories] lỗi hậu kỳ openLibrary (không chặn danh sách)', error)
+      }
+    },
+
+    /**
+     * Bước 2 của mở thư mục (LibraryPage lạnh/làm mới, FolderPage): quét hợp
+     * nhất qua walkLibrary — patch `lastModified` tiến triển trực tiếp vào
+     * các object story (UI hiện dần), ghi cache chapter + counts/latest cho
+     * truyện đánh dấu. Ngày là metadata phụ: lỗi quét → fallback
+     * lastModified = modifiedTime, không chặn danh sách.
+     */
+    async walkStories(stories: StorySummary[], gen: number): Promise<void> {
+      if (stories.length === 0) return
+      const marked = stories.filter((story) => this.marks[story.id])
+      for (const story of marked) this.scanning[story.id] = true
+
+      try {
+        const result = await walkLibrary(stories, {
+          markedStoryIds: new Set(marked.map((story) => story.id)),
+          groupMarks: this.groupMarkSet(),
+          onDates: (latest) => {
+            if (gen !== this.gen) return
+            for (const story of stories) {
+              const lastModified = latest.get(story.id)
+              if (lastModified !== undefined) story.lastModified = lastModified
+            }
+          },
+          onLevelDone: (counts) => {
+            if (gen !== this.gen) return
+            for (const [storyId, count] of counts) this.counts[storyId] = count
+          },
+        })
+        if (gen !== this.gen) return
+        for (const [storyId, chapters] of result.chapters) {
+          await setCache(chaptersKey(storyId), chapters)
+          if (gen !== this.gen) return
+          this.counts[storyId] = chapters.length
+          this.latest[storyId] = chapters[chapters.length - 1]?.name ?? ''
+        }
+      } catch {
+        for (const story of stories) story.lastModified = story.modifiedTime
+      } finally {
+        if (gen === this.gen) {
+          for (const story of marked) this.scanning[story.id] = false
+        }
+      }
     },
 
     /**
      * Điền counts/latest cho các folder USER đã xác nhận là truyện trong
-     * `stories` (list truyện của LibraryPage hoặc folder con của FolderPage —
-     * phải kèm `lastModified` tươi): cache chapter còn tươi thì dùng ngay,
-     * cũ hơn lastModified (owner thêm/sửa chap) hoặc chưa có thì quét lại batch.
+     * `stories` (list truyện từ CACHE — phải kèm `lastModified` tươi):
+     * - cache chapter còn tươi → dùng ngay (0 request)
+     * - cũ hơn lastModified (owner vừa thêm/sửa chap) → fetchNewChapters:
+     *   chỉ lấy phần mới hơn mốc cache (1 request/truyện, chạy song song)
+     * - chưa có cache / cache cũ thiếu modifiedTime → quét full batch
      */
     async refreshMarkedChapters(stories: StorySummary[], gen: number): Promise<void> {
       const marked = stories.filter((story) => this.marks[story.id])
+      const incremental: Array<{ story: StorySummary; cached: ChapterRef[] }> = []
       const uncached: StorySummary[] = []
       for (const story of marked) {
         const cached = await getCache<ChapterRef[]>(chaptersKey(story.id))
         if (cached && isChaptersCacheFresh(cached.data, story)) {
           this.counts[story.id] = cached.data.length
           this.latest[story.id] = cached.data[cached.data.length - 1]?.name ?? ''
+        } else if (cached && !cached.data.some((chapter) => chapter.modifiedTime === undefined)) {
+          incremental.push({ story, cached: cached.data })
         } else {
           uncached.push(story)
         }
       }
 
-      if (uncached.length === 0) return
-      for (const story of uncached) this.scanning[story.id] = true
+      const all = [...incremental.map((entry) => entry.story), ...uncached]
+      if (all.length === 0) return
+      for (const story of all) this.scanning[story.id] = true
 
       try {
-        const results = await scanStories(uncached, {
+        const merged = await pooledMap(
+          incremental,
+          async ({ story, cached }) => {
+            try {
+              const chapters = await fetchNewChapters(story.id, cached, {
+                groupMarks: this.groupMarkSet(),
+              })
+              return { story, chapters, error: '' }
+            } catch (error) {
+              // Lỗi mạng riêng truyện — không throw để truyện khác vẫn chạy
+              return { story, chapters: null, error: toErrorMessage(error) }
+            }
+          },
+          DRIVE_CONCURRENCY,
+        )
+        if (gen !== this.gen) return
+
+        const fullScan = [...uncached]
+        for (const { story, chapters, error } of merged) {
+          if (chapters === null) {
+            if (error) this.scanErrors[story.id] = error
+            // fetchNewChapters trả null (cache không merge được) → quét full
+            else fullScan.push(story)
+            continue
+          }
+          await setCache(chaptersKey(story.id), chapters)
+          this.counts[story.id] = chapters.length
+          this.latest[story.id] = chapters[chapters.length - 1]?.name ?? ''
+        }
+
+        if (fullScan.length === 0) return
+        const results = await scanStories(fullScan, {
           groupMarks: this.groupMarkSet(),
           onLevelDone: (counts) => {
             if (gen !== this.gen) return
@@ -187,11 +357,11 @@ export const useStoriesStore = defineStore('stories', {
         }
       } catch (error) {
         if (gen === this.gen) {
-          for (const story of uncached) this.scanErrors[story.id] = toErrorMessage(error)
+          for (const story of all) this.scanErrors[story.id] = toErrorMessage(error)
         }
       } finally {
         if (gen === this.gen) {
-          for (const story of uncached) this.scanning[story.id] = false
+          for (const story of all) this.scanning[story.id] = false
         }
       }
     },
@@ -209,10 +379,10 @@ export const useStoriesStore = defineStore('stories', {
       delete this.groups[folderId]
       delete this.lists[folderId]
       useSyncStore().schedulePush()
-      // Cache cũ có thể là snapshot trước khi owner thêm chap mới → bỏ qua, quét lại
-      void this.ensureChapters(this.libId, folderId, { force: true }).catch(() => {
-        // lỗi đã ghi vào scanErrors
-      })
+        // Cache cũ có thể là snapshot trước khi owner thêm chap mới → bỏ qua, quét lại
+        void this.ensureChapters(this.libId, folderId, { force: true }).catch((error) => {
+          console.error('[stories] quét sau khi đánh dấu lỗi', error)
+        })
     },
 
     /** Bỏ đánh dấu (user đánh nhầm) — cache giữ lại, lần đánh dấu lại sẽ quét tươi (force). */

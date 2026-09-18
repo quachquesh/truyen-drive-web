@@ -1,6 +1,6 @@
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
 
-import { sleep } from './concurrency'
+import { pooledMap, sleep } from './concurrency'
 import { clearToken, getToken, hasToken, isTokenFresh, refreshToken, setToken } from './tokenBox'
 
 declare module 'axios' {
@@ -149,6 +149,13 @@ export function apiHasToken(): boolean {
   return hasToken()
 }
 
+/**
+ * Số request listing chạy song song — đo thực tế ~1.3 req/s ở concurrency 3
+ * (mỗi request 1.2–1.9s), nâng 6 ≈ 4–5 req/s, dư an toàn dưới quota Drive
+ * ~12 req/s mỗi user; retry 403/429 ở interceptor lo phần còn lại.
+ */
+export const DRIVE_CONCURRENCY = 6
+
 export function apiTokenFresh(): boolean {
   return isTokenFresh()
 }
@@ -235,8 +242,13 @@ export async function searchFolders(
 /**
  * Liệt kê con của NHIỀU folder trong vài request duy nhất bằng query
  * `('id1' in parents or 'id2' in parents ...) and trashed = false`.
- * Kết quả nhóm theo cha qua field `parents`. Chunk 50 cha/request để
- * giữ URL ngắn. Đây là cách chống N+1 khi quét cả kho truyện.
+ * Kết quả nhóm theo cha qua field `parents`. Đây là cách chống N+1 khi quét
+ * cả kho truyện.
+ *
+ * Chunk 12 cha/request: mỗi chunk thường gói ~1000 con = đúng 1 trang — hết
+ * các chuỗi phân trang tuần tự theo pageToken (đo thực tế chunk 50 cha với
+ * kho ~85 chap/truyện sinh 3–4 trang nối tiếp, chuỗi dài nhất 6.8s). Chunk
+ * nhỏ hơn chạy song song tốt hơn với DRIVE_CONCURRENCY luồng.
  *
  * `foldersOnly`: chỉ lấy folder con (không kèm metadata ảnh/PDF) — dùng
  * khi quét cấu trúc; danh sách file của chapter lấy sau bằng listChildren.
@@ -246,47 +258,95 @@ export async function listChildrenGrouped(
   options: { foldersOnly?: boolean; signal?: AbortSignal } = {},
 ): Promise<Map<string, DriveItem[]>> {
   const grouped = new Map<string, DriveItem[]>()
-  const CHUNK = 50
+  const CHUNK = 12
   const mimeFilter = options.foldersOnly
     ? ' and mimeType = ' + "'application/vnd.google-apps.folder'"
     : ''
 
-  for (let i = 0; i < parentIds.length; i += CHUNK) {
-    const chunk = parentIds.slice(i, i + CHUNK)
-    const parentsQuery = chunk.map((id) => `'${id}' in parents`).join(' or ')
-    let pageToken: string | undefined
+  const chunks: string[][] = []
+  for (let i = 0; i < parentIds.length; i += CHUNK) chunks.push(parentIds.slice(i, i + CHUNK))
 
-    do {
-      const res = await http.get<{
-        files?: Array<DriveItem & { parents?: string[] }>
-        nextPageToken?: string
-      }>('/files', {
-        params: {
-          q: `((${parentsQuery}) and trashed = false)${mimeFilter}`,
-          fields: 'nextPageToken, files(id, name, mimeType, parents, modifiedTime)',
-          pageSize: 1000,
-          pageToken,
-        },
-        signal: options.signal,
-      })
-      for (const file of res.data.files ?? []) {
-        const parent = file.parents?.[0]
-        if (!parent) continue
-        const list = grouped.get(parent)
-        if (list) list.push(file)
-        else
-          grouped.set(parent, [
-            {
-              id: file.id,
-              name: file.name,
-              mimeType: file.mimeType,
-              modifiedTime: file.modifiedTime,
-            },
-          ])
-      }
-      pageToken = res.data.nextPageToken
-    } while (pageToken)
-  }
+  await pooledMap(
+    chunks,
+    async (chunk) => {
+      const parentsQuery = chunk.map((id) => `'${id}' in parents`).join(' or ')
+      let pageToken: string | undefined
+
+      do {
+        const res = await http.get<{
+          files?: Array<DriveItem & { parents?: string[] }>
+          nextPageToken?: string
+        }>('/files', {
+          params: {
+            q: `((${parentsQuery}) and trashed = false)${mimeFilter}`,
+            fields: 'nextPageToken, files(id, name, mimeType, parents, modifiedTime)',
+            pageSize: 1000,
+            pageToken,
+          },
+          signal: options.signal,
+        })
+        for (const file of res.data.files ?? []) {
+          const parent = file.parents?.[0]
+          if (!parent) continue
+          const item: DriveItem = {
+            id: file.id,
+            name: file.name,
+            mimeType: file.mimeType,
+            modifiedTime: file.modifiedTime,
+          }
+          const list = grouped.get(parent)
+          if (list) list.push(item)
+          else grouped.set(parent, [item])
+        }
+        pageToken = res.data.nextPageToken
+      } while (pageToken)
+    },
+    DRIVE_CONCURRENCY,
+  )
+
+  return grouped
+}
+
+/**
+ * Liệt kê con của nhiều folder MỚI HƠN mốc `sinceIso` (RFC 3339) — q lọc
+ * `modifiedTime >` phía server nên response chỉ chứa phần cần merge vào
+ * cache, không phải list lại toàn bộ. Dùng để lấy chapter mới của truyện
+ * đã có cache; folder nhóm bị bump ngày khi thêm con cũng quay về ở đây.
+ */
+export async function listNewChildren(
+  parentIds: string[],
+  sinceIso: string,
+  options: { foldersOnly?: boolean; signal?: AbortSignal } = {},
+): Promise<Map<string, DriveItem[]>> {
+  const grouped = new Map<string, DriveItem[]>()
+  const mimeFilter = options.foldersOnly
+    ? ' and mimeType = ' + "'application/vnd.google-apps.folder'"
+    : ''
+  const parentsQuery = parentIds.map((id) => `'${id}' in parents`).join(' or ')
+
+  let pageToken: string | undefined
+  do {
+    const res = await http.get<{
+      files?: Array<DriveItem & { parents?: string[] }>
+      nextPageToken?: string
+    }>('/files', {
+      params: {
+        q: `((${parentsQuery}) and trashed = false and modifiedTime > '${sinceIso}')${mimeFilter}`,
+        fields: 'nextPageToken, files(id, name, mimeType, parents, modifiedTime)',
+        pageSize: 1000,
+        pageToken,
+      },
+      signal: options.signal,
+    })
+    for (const file of res.data.files ?? []) {
+      const parent = file.parents?.[0]
+      if (!parent) continue
+      const list = grouped.get(parent)
+      if (list) list.push(file)
+      else grouped.set(parent, [file])
+    }
+    pageToken = res.data.nextPageToken
+  } while (pageToken)
 
   return grouped
 }

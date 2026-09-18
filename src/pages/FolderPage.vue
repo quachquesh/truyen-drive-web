@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NButton, NEmpty, NGrid, NGridItem, NInput, NSpin, NText } from 'naive-ui'
+import { NAlert, NButton, NEmpty, NGrid, NGridItem, NInput, NSelect, NSpin, NText } from 'naive-ui'
 
 import AppIcon from '@/components/AppIcon.vue'
 import StoryCard from '@/components/StoryCard.vue'
-import { getFileMeta, listChildrenGrouped, toErrorMessage } from '@/lib/driveApi'
-import { naturalSort } from '@/lib/naturalSort'
-import { FOLDER_MIME, annotateLastModified, type StorySummary } from '@/lib/scanner'
+import { getFileMeta, toErrorMessage } from '@/lib/driveApi'
+import type { StorySummary } from '@/lib/scanner'
+import { sortStories, type StorySortMode } from '@/lib/storySort'
 import { useStoriesStore } from '@/stores/stories'
 
 const route = useRoute()
@@ -22,10 +22,21 @@ const libId = computed(() => (typeof route.params.libId === 'string' ? route.par
 /** Tên folder truyền theo query khi điều hướng; F5 trực tiếp thì fetch metadata */
 const folderName = ref(typeof route.query.name === 'string' ? route.query.name : '')
 
-const children = ref<StorySummary[]>([])
-const loading = ref(false)
-const error = ref('')
 const search = ref('')
+
+/** Kiểu sắp xếp danh sách — nhớ lựa chọn của user (dùng chung key với LibraryPage) */
+const SORT_KEY = 'tdw-story-sort'
+const sortMode = ref<StorySortMode>(
+  localStorage.getItem(SORT_KEY) === 'modified' ? 'modified' : 'name',
+)
+const sortOptions = [
+  { label: 'Tên A→Z', value: 'name' },
+  { label: 'Mới cập nhật', value: 'modified' },
+]
+
+watch(sortMode, (mode) => {
+  localStorage.setItem(SORT_KEY, mode)
+})
 
 const marked = computed(() => Boolean(storiesStore.marks[folderId.value]))
 const groupMarked = computed(() => Boolean(storiesStore.groups[folderId.value]))
@@ -42,40 +53,28 @@ function deaccent(value: string): string {
 
 const filteredChildren = computed(() => {
   const query = deaccent(search.value.trim())
-  if (!query) return children.value
-  return children.value.filter((child) => deaccent(child.name).includes(query))
+  const base = query
+    ? storiesStore.stories.filter((child) => deaccent(child.name).includes(query))
+    : storiesStore.stories
+  return sortStories(base, sortMode.value)
 })
 
-async function load(): Promise<void> {
-  loading.value = true
-  error.value = ''
-  try {
-    if (!folderName.value) {
+/**
+ * Danh sách folder con qua cùng luồng openLibrary của store: cache IndexedDB
+ * trước (vào lại folder ≈ 0 request), Làm mới chỉ lấy phần thay đổi, lần đầu
+ * quét hợp nhất ngầm sau khi hiện danh sách.
+ */
+async function load(force = false): Promise<void> {
+  if (!folderName.value) {
+    try {
       const meta = await getFileMeta(folderId.value)
       folderName.value = meta.name
+    } catch (e) {
+      storiesStore.listError = toErrorMessage(e)
+      return
     }
-    // Chỉ cần folder con (ảnh/file lẻ bị bỏ qua) — KHÔNG quét chapter gì ở đây,
-    // user tự quyết định từng folder bên dưới
-    const grouped = await listChildrenGrouped([folderId.value])
-    const items = (grouped.get(folderId.value) ?? []).filter(
-      (item) => item.mimeType === FOLDER_MIME,
-    )
-    const folders = naturalSort(
-      items.map((item) => ({ id: item.id, name: item.name, modifiedTime: item.modifiedTime })),
-      (child) => child.name,
-    )
-    // Drive không bump ngày folder cha khi thêm con → tính ngày cập nhật hiệu dụng
-    await annotateLastModified(folders, { groupMarks: storiesStore.groupMarkSet() })
-    children.value = folders
-    // Folder con đã đánh dấu truyện: điền số chap/mới nhất từ cache, cache cũ hơn
-    // lastModified (owner vừa thêm chap) thì quét lại — như Làm mới của LibraryPage
-    await storiesStore.loadMarks()
-    await storiesStore.refreshMarkedChapters(folders, storiesStore.gen)
-  } catch (e) {
-    error.value = toErrorMessage(e)
-  } finally {
-    loading.value = false
   }
+  await storiesStore.openFolder(libId.value, folderId.value, { force })
 }
 
 /** User xác nhận folder hiện tại là truyện → đánh dấu + vào danh sách chapter */
@@ -119,13 +118,11 @@ async function unmarkList(): Promise<void> {
 }
 
 onMounted(() => {
-  void storiesStore.loadMarks()
   void load()
 })
 
 watch(folderId, () => {
   folderName.value = typeof route.query.name === 'string' ? route.query.name : ''
-  children.value = []
   void load()
 })
 </script>
@@ -150,7 +147,8 @@ watch(folderId, () => {
           <AppIcon name="search" :size="16" />
         </template>
       </NInput>
-      <NButton secondary :loading="loading" @click="load()">
+      <NSelect v-model:value="sortMode" :options="sortOptions" class="sort-select" />
+      <NButton secondary :loading="storiesStore.listLoading" @click="load(true)">
         <template #icon>
           <AppIcon name="refresh" :size="16" />
         </template>
@@ -203,15 +201,15 @@ watch(folderId, () => {
     </NAlert>
 
     <NAlert
-      v-if="error"
+      v-if="storiesStore.listError"
       type="error"
-      :title="error"
+      :title="storiesStore.listError"
       style="margin-bottom: 12px"
       closable
-      @close="error = ''"
+      @close="storiesStore.listError = ''"
     />
 
-    <div v-if="loading && !children.length" class="center-msg">
+    <div v-if="storiesStore.listLoading && !storiesStore.stories.length" class="center-msg">
       <NSpin />
       <NText depth="3">Đang tải...</NText>
     </div>
@@ -270,6 +268,10 @@ watch(folderId, () => {
 
 .search-input {
   width: min(220px, 100%);
+}
+
+.sort-select {
+  width: 160px;
 }
 
 .classify-banner {
@@ -332,8 +334,15 @@ watch(folderId, () => {
   }
 
   .search-input {
-    flex: 1;
+    /* Hàng riêng full-width — tránh bị ép hẹp khi cạnh sort + Làm mới */
+    order: -1;
+    flex-basis: 100%;
     width: auto;
+  }
+
+  .sort-select {
+    width: auto;
+    min-width: 132px;
   }
 }
 </style>

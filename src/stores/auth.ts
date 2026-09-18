@@ -12,6 +12,19 @@ import * as tokenBox from '@/lib/tokenBox'
 import { useSyncStore } from './sync'
 
 /**
+ * DEBUG: nạp access token có sẵn từ VITE_DRIVE_ACCESS_TOKEN (.env.local) —
+ * bỏ qua login GIS để test request Drive thật trên browser. Token thực tế
+ * sống ~1h; coi như hết hạn 60 phút sau boot, hết thì cấp mới + restart
+ * dev server. KHÔNG dùng ở production (token bị nhúng vào bundle dev).
+ */
+function primeEnvDebugToken(): void {
+  const token = import.meta.env.VITE_DRIVE_ACCESS_TOKEN
+  if (!token || tokenBox.hasToken()) return
+  tokenBox.setToken(token, Date.now() + 60 * 60 * 1000)
+  console.info('[debug] Đang dùng VITE_DRIVE_ACCESS_TOKEN — hết hạn debug sau 60 phút')
+}
+
+/**
  * Token Google chỉ giữ trong memory (tokenBox). Refresh trang → mất token →
  * guard đưa về login, người dùng bấm nút xin lại. Không bao giờ ghi ra storage.
  */
@@ -62,6 +75,7 @@ export const useAuthStore = defineStore('auth', {
     async boot(): Promise<void> {
       if (this.booted) return
       this.wireRefresher()
+      primeEnvDebugToken()
       if (tokenBox.hasToken()) {
         // còn token trong memory (SPA navigation, không xảy ra sau F5) → vẫn đăng nhập
         this.authed = true
@@ -105,7 +119,8 @@ export const useAuthStore = defineStore('auth', {
 
     logout(): void {
       const token = tokenBox.getToken()
-      if (token) revokeToken(token)
+      // Token debug từ env không thuộc grant GIS → không revoke để dùng lại lần sau
+      if (token && token !== import.meta.env.VITE_DRIVE_ACCESS_TOKEN) revokeToken(token)
       tokenBox.clearToken()
       clearLoginHint()
       this.authed = false

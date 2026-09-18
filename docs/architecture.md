@@ -26,15 +26,17 @@ src/
 │   ├── googleAuth.ts     # GIS token client: silent refresh, supersede request cũ
 │   ├── tokenBox.ts       # token trong memory (không đụng localStorage)
 │   ├── driveApi.ts       # axios + interceptors (401 → refresh token, 403/429/5xx → backoff)
-│   │                     # + listChildrenGrouped: batch nhiều folder cha trong 1 query (chống N+1)
-│   ├── scanner.ts        # quét BFS theo tầng, chỉ list folder + ensureChapterFiles lazy
+│   │                     # + listChildrenGrouped: batch nhiều folder cha trong 1 query (chống N+1,
+│   │                     #   chunk chạy song song) + listNewChildren: lọc phần mới hơn mốc thời gian
+│   ├── scanner.ts        # listStories (1 request) + walkLibrary (quét hợp nhất 1 lượt)
+│   │                     # + fetchNewChapters (incremental) + ensureChapterFiles lazy
 │   ├── db.ts             # IndexedDB (idb): libraries/cache/blobs/progress/folderTypes/tombstones
 │   ├── sync.ts           # đồng bộ đa thiết bị: snapshot → merge last-write-wins → apply
 │   ├── blobCache.ts      # blob ảnh/PDF: IDB trước, miss thì tải từ Drive
 │   ├── pdfDoc.ts         # wrapper pdf.js: mở document + render trang theo cuộn
 │   ├── naturalSort.ts    # sort "tự nhiên" (2 < 10)
 │   ├── storySort.ts      # sort truyện theo tên / mới cập nhật
-│   ├── concurrency.ts    # semaphore giới hạn request song song
+│   ├── concurrency.ts    # pooledMap giới hạn request song song (DRIVE_CONCURRENCY = 6)
 │   ├── folderUrl.ts      # parse URL/ID folder Drive
 │   └── gis.d.ts          # type cho Google Identity Services
 ├── stores/               # Pinia: auth / library / stories / sync
@@ -54,12 +56,15 @@ src/
 3. Token nhận được nằm trong `tokenBox.ts` (biến memory). **Không bao giờ ghi xuống localStorage** — refresh trang là mất, guard đưa về trang login để người dùng bấm nút xin lại (login-hint email lưu ở localStorage giúp Google chọn đúng tài khoản). Không tự xin token ngầm khi tải trang; trong phiên, token sắp hết hạn/401 thì axios interceptor mới silent re-mint.
 4. Mọi request Drive qua `driveApi.ts`: interceptor 401 → thử refresh token 1 lần; 403/429/5xx → backoff lũy tiến rồi retry.
 
-### Quét kho (lazy từng tầng)
+### Mở kho & quét (hợp nhất 1 lượt + incremental)
 
-1. Mở kho chỉ gọi `files.list` các **folder** con (không đụng tới file).
-2. `listChildrenGrouped` gộp nhiều folder cha vào 1 query bằng điều kiện `'<id1>' in parents or '<id2>' in parents …` — cả tầng chỉ ~vài request thay vì N request mỗi folder.
-3. Người dùng đánh dấu folder là **truyện** → `scanner.ts` quét 1 cấp con (chapter); folder trung gian được đánh dấu **nhóm** để đưa chapter lên cùng cấp. Kết quả đánh dấu lưu IndexedDB (`folderTypes`) kèm tombstone khi bỏ đánh dấu.
-4. Danh sách **file** của chapter chỉ được tải khi mở chapter đọc lần đầu (`ensureChapterFiles`), rồi cache vào IndexedDB.
+1. **Bước 1 — danh sách truyện**: mở kho/làm mới gọi đúng 1 `files.list` folder con của kho (`listStories`) → card hiện ngay, không chờ quét sâu. "Làm mới" giữ danh sách cũ trên màn hình trong lúc tải. FolderPage mở folder bên trong kho qua cùng một luồng (`openFolder` → `openListing`, cache key `folder:<folderId>`) — vào lại folder ≈ 0 request, Làm mới trong folder cũng incremental.
+2. **Bước 2 — quét hợp nhất** (`walkLibrary`, chỉ chạy khi lạnh/force): một lượt BFS duy nhất vừa tính `lastModified` cho MỌI truyện (= max ngày folder + con trực tiếp), vừa lấy chapter của các folder được USER đánh dấu **truyện** (folder đánh dấu **nhóm** đưa con lên cùng cấp). Không folder nào bị list 2 lần; ngày/chapter đổ về UI tiến triển sau từng tầng.
+3. **Warm path — incremental**: khi đã có cache, mở kho 0 request danh sách; truyện đánh dấu có cache cũ hơn `lastModified` thì `fetchNewChapters` gọi `listNewChildren` với điều kiện `modifiedTime > '<mốc mới nhất trong cache>'` — server chỉ trả phần mới, merge vào cache (1 request/truyện). Không phát hiện chapter bị xóa — bấm Làm mới để quét full.
+4. **Làm mới (force) — incremental**: có cache ngày là chỉ lấy phần thay đổi kể từ mốc cũ (`refreshStoryDates`, sort theo mốc rồi chunk 24 cha/request) + 1 request lấy lại danh sách kho (phát hiện truyện mới/xóa ở cấp kho); truyện mới xuất hiện được quét full riêng. Quét lại toàn bộ tuyệt đối: "Xóa danh sách đã lưu" trong Cài đặt.
+5. `listChildrenGrouped` gộp nhiều folder cha vào 1 query bằng `'<id1>' in parents or '<id2>' in parents …` (chunk 12 cha — mỗi chunk ~1000 con gói 1 trang, hết chuỗi phân trang tuần tự; chạy song song 6 luồng) — cả tầng chỉ ~vài request thay vì N request mỗi folder.
+6. Kết quả đánh dấu lưu IndexedDB (`folderTypes`) kèm tombstone khi bỏ đánh dấu.
+7. Danh sách **file** của chapter chỉ được tải khi mở chapter đọc lần đầu (`ensureChapterFiles`), rồi cache vào IndexedDB.
 
 ### Đọc
 
@@ -77,9 +82,9 @@ src/
 
 Drive giới hạn ~12 request/giây/user. Vì vậy:
 
-- Scanner chạy qua `semaphore(4)` (tối đa 4 request song song).
+- Listing chạy qua `pooledMap` giới hạn `DRIVE_CONCURRENCY = 6` request song song (đo thực tế ~4–5 req/s); số request còn được giảm bằng batch nhiều cha + incremental theo `modifiedTime`.
 - Bị 403/429 thì backoff lũy tiến rồi retry tự động.
-- Mọi kết quả list được cache IndexedDB — chỉ lần đầu quét là tốn request.
+- Mọi kết quả list được cache IndexedDB — chỉ lần đầu quét là tốn request; các lần sau chỉ lấy phần mới hơn mốc cache.
 
 ## Testing
 

@@ -1,4 +1,11 @@
-import { listChildren, listChildrenGrouped, type DriveItem } from './driveApi'
+import { pooledMap } from './concurrency'
+import {
+  DRIVE_CONCURRENCY,
+  listChildren,
+  listChildrenGrouped,
+  listNewChildren,
+  type DriveItem,
+} from './driveApi'
 import { getCache, setCache } from './db'
 import { naturalSort } from './naturalSort'
 
@@ -79,48 +86,213 @@ export function latestIso(...times: Array<string | undefined>): string | undefin
   return best
 }
 
+export interface WalkLibraryOptions {
+  signal?: AbortSignal
+  groupMarks?: Set<string>
+  /** id truyện USER đã đánh dấu → quét chapter đầy đủ (mở rộng tầng nhóm) */
+  markedStoryIds?: Set<string>
+  /** Sau mỗi tầng: snapshot ngày cập nhật hiệu dụng tính đến giờ của mọi truyện */
+  onDates?: (latest: Map<string, string | undefined>) => void
+  /** Sau mỗi tầng: số chapter tạm tìm được của từng truyện ĐÁNH DẤU */
+  onLevelDone?: (counts: Map<string, number>) => void
+}
+
+export interface WalkLibraryResult {
+  /** storyId → ngày cập nhật hiệu dụng (đủ tầng nhóm với truyện đánh dấu) */
+  lastModified: Map<string, string | undefined>
+  /** storyId → danh sách chapter (chỉ có truyện được đánh dấu) */
+  chapters: Map<string, ChapterRef[]>
+}
+
 /**
- * Điền `lastModified` cho từng truyện = ISO mới nhất giữa folder truyện và
- * các folder con trực tiếp; folder con được USER đánh dấu nhóm (`groupMarks`)
- * thì quét thêm bên trong (đệ quy theo tầng như scanStories) — nhờ vậy chap
- * mới nằm trong nhóm ("0-80") cũng bump được ngày.
+ * Quét HỢP NHẤT 1 lượt duy nhất cho danh sách truyện vừa list, thay cho 2 lượt
+ * riêng (annotate ngày + quét chapter) trước đây — không folder nào bị list 2 lần:
+ * - `lastModified` cho MỌI truyện = max(ngày folder, ngày con trực tiếp) — Drive
+ *   KHÔNG bump modifiedTime của folder cha khi thêm chap mới nên phải tự tính.
+ * - Truyện ĐÁNH DẤU: danh sách chapter đầy đủ với đúng 1 cấp tự động + nhóm
+ *   (đưa con nhóm lên cùng cấp như scanStories); chỉ subtree của truyện đánh
+ *   dấu mới mở rộng tầng nhóm. Truyện chưa đánh dấu không descend — folder nhóm
+ *   bị bump ngày khi thêm con nên max con trực tiếp vẫn phản ánh chap mới,
+ *   còn chapter của truyện chưa đánh dấu thì không cần.
  *
- * Request lỗi → fallback `lastModified = modifiedTime` (ngày cũ của folder) —
- * ngày chỉ là metadata phụ, không được phép chặn việc mở danh sách.
+ * Requests: 1 listing batch mỗi tầng cho toàn bộ folder đang mở rộng.
  */
-export async function annotateLastModified(
+export async function walkLibrary(
   stories: StorySummary[],
-  options: { groupMarks?: Set<string>; signal?: AbortSignal } = {},
-): Promise<void> {
-  if (stories.length === 0) return
+  options: WalkLibraryOptions = {},
+): Promise<WalkLibraryResult> {
   const groupMarks = options.groupMarks ?? new Set<string>()
+  const markedIds = options.markedStoryIds ?? new Set<string>()
 
-  try {
-    const latest = new Map<string, string | undefined>(
-      stories.map((story) => [story.id, story.modifiedTime]),
+  const latest = new Map<string, string | undefined>(
+    stories.map((story) => [story.id, story.modifiedTime]),
+  )
+  const chaptersOf = new Map<string, ChapterRef[]>()
+  const owner = new Map<string, string>()
+  for (const story of stories) {
+    chaptersOf.set(story.id, [])
+    owner.set(story.id, story.id)
+  }
+
+  let toExpand: ExpandFolder[] = stories.map(
+    (story) => ({ id: story.id, name: story.name, modifiedTime: story.modifiedTime }),
+  )
+
+  for (let depth = 0; depth < MAX_DEPTH && toExpand.length > 0; depth++) {
+    const childrenMap = await listChildrenGrouped(
+      toExpand.map((folder) => folder.id),
+      { foldersOnly: true, signal: options.signal },
     )
-    let toExpand = stories.map((story) => ({ id: story.id, owner: story.id }))
 
-    for (let depth = 0; depth < MAX_DEPTH && toExpand.length > 0; depth++) {
-      const childrenMap = await listChildrenGrouped(
-        toExpand.map((folder) => folder.id),
-        { foldersOnly: true, signal: options.signal },
-      )
+    const nextLevel: ExpandFolder[] = []
+    for (const folder of toExpand) {
+      const storyId = owner.get(folder.id) ?? folder.id
+      const marked = markedIds.has(storyId)
+      const children = naturalSort(childrenMap.get(folder.id) ?? [], (child) => child.name)
 
-      const nextLevel: Array<{ id: string; owner: string }> = []
-      for (const folder of toExpand) {
-        for (const child of childrenMap.get(folder.id) ?? []) {
-          latest.set(folder.owner, latestIso(latest.get(folder.owner), child.modifiedTime))
-          if (groupMarks.has(child.id)) nextLevel.push({ id: child.id, owner: folder.owner })
+      if (children.length === 0) {
+        // Folder lá → chapter (truyện rỗng cũng tính 1 chapter để không mất truyện);
+        // folder được đánh dấu nhóm thì kể cả rỗng cũng bỏ qua
+        if (marked && !groupMarks.has(folder.id)) {
+          chaptersOf
+            .get(storyId)
+            ?.push({ id: folder.id, name: folder.name, modifiedTime: folder.modifiedTime })
+        }
+        continue
+      }
+
+      for (const child of children) {
+        latest.set(storyId, latestIso(latest.get(storyId), child.modifiedTime))
+        if (owner.has(child.id)) continue
+        owner.set(child.id, storyId)
+        if (groupMarks.has(child.id)) {
+          // Nhóm đã đánh dấu → bung con lên (tầng sau); chỉ cần với truyện đánh dấu
+          if (marked) nextLevel.push(child)
+        } else if (marked) {
+          chaptersOf
+            .get(storyId)
+            ?.push({ id: child.id, name: child.name, modifiedTime: child.modifiedTime })
         }
       }
-      toExpand = nextLevel
     }
 
-    for (const story of stories) story.lastModified = latest.get(story.id) ?? story.modifiedTime
-  } catch {
-    for (const story of stories) story.lastModified = story.modifiedTime
+    toExpand = nextLevel
+    options.onDates?.(new Map(latest))
+    options.onLevelDone?.(currentCounts(stories.filter((story) => markedIds.has(story.id)), chaptersOf))
   }
+
+  const chapters = new Map<string, ChapterRef[]>()
+  for (const story of stories) {
+    if (!markedIds.has(story.id)) continue
+    chapters.set(story.id, naturalSort(chaptersOf.get(story.id) ?? [], (chapter) => chapter.name))
+  }
+  return { lastModified: latest, chapters }
+}
+
+/**
+ * Lấy CHỈ phần chapter mới hơn mốc trong cache rồi merge — không list lại
+ * toàn bộ truyện (q lọc `modifiedTime >` phía server). Folder NHÓM bị bump
+ * ngày khi thêm con → quay về trong kết quả → lấy tiếp chap mới bên trong
+ * (đệ quy theo groupMarks). Merge theo id: chapter mới thêm vào, chapter sửa
+ * (đổi tên) cập nhật tại chỗ.
+ *
+ * Trả null khi không merge chắc chắn được (cache thiếu modifiedTime) — caller
+ * quét full. Không phát hiện chapter bị XÓA/đưa đi nơi khác — bấm Làm mới
+ * (force) để quét lại toàn bộ khi cần.
+ */
+export async function fetchNewChapters(
+  storyId: string,
+  cached: ChapterRef[],
+  options: { groupMarks?: Set<string>; signal?: AbortSignal } = {},
+): Promise<ChapterRef[] | null> {
+  const groupMarks = options.groupMarks ?? new Set<string>()
+  // Cache đời cũ thiếu modifiedTime ở chapter nào đó → mốc không tin được
+  if (cached.some((chapter) => chapter.modifiedTime === undefined)) return null
+  const threshold = latestIso(...cached.map((chapter) => chapter.modifiedTime))
+  if (threshold === undefined) return null
+
+  const chapters = new Map(cached.map((chapter) => [chapter.id, { ...chapter }]))
+  let toExpand = [storyId]
+
+  for (let depth = 0; depth < MAX_DEPTH && toExpand.length > 0; depth++) {
+    const childrenMap = await listNewChildren(toExpand, threshold, {
+      foldersOnly: true,
+      signal: options.signal,
+    })
+    const nextLevel: string[] = []
+    for (const folderId of toExpand) {
+      for (const child of childrenMap.get(folderId) ?? []) {
+        if (groupMarks.has(child.id)) {
+          nextLevel.push(child.id)
+        } else {
+          chapters.set(child.id, {
+            id: child.id,
+            name: child.name,
+            modifiedTime: child.modifiedTime,
+          })
+        }
+      }
+    }
+    toExpand = nextLevel
+  }
+
+  return naturalSort([...chapters.values()], (chapter) => chapter.name)
+}
+
+/** Số cha mỗi request khi tính lại ngày incremental (payload nhỏ nhờ lọc mốc). */
+const DATE_CHUNK = 24
+
+/**
+ * Tính lại ngày cập nhật hiệu dụng cho các truyện ĐÃ có `lastModified` —
+ * chỉ lấy folder con MỚI HƠN mốc cũ (q lọc `modifiedTime >` phía server)
+ * thay vì list lại toàn bộ con như walkLibrary. Dùng cho nút Làm mới.
+ *
+ * Truyện được sort theo mốc cũ rồi chunk liền nhau để mốc min của mỗi chunk
+ * sát nhau (chunk toàn truyện lâu chưa cập nhật → trả về rỗng). Item cũ
+ * hơn mốc riêng của truyện khác trong chunk quay về cũng vô hại — lấy max.
+ *
+ * Trả map id → lastModified MỚI, chỉ chứa truyện có phần mới hơn mốc cũ.
+ * Request lỗi → throw để caller fallback quét full.
+ */
+export async function refreshStoryDates(
+  stories: StorySummary[],
+  options: { signal?: AbortSignal } = {},
+): Promise<Map<string, string>> {
+  const changed = new Map<string, string>()
+  const eligible = [...stories]
+    .filter((story) => story.lastModified !== undefined)
+    .sort(
+      (a, b) =>
+        new Date(a.lastModified ?? 0).getTime() - new Date(b.lastModified ?? 0).getTime(),
+    )
+
+  const chunks: StorySummary[][] = []
+  for (let i = 0; i < eligible.length; i += DATE_CHUNK) {
+    chunks.push(eligible.slice(i, i + DATE_CHUNK))
+  }
+
+  await pooledMap(
+    chunks,
+    async (chunk) => {
+      // Sau sort tăng dần, phần tử đầu chunk là mốc cũ nhất — lọc theo nó
+      const threshold = chunk[0]!.lastModified!
+      const childrenMap = await listNewChildren(
+        chunk.map((story) => story.id),
+        threshold,
+        { foldersOnly: true, signal: options.signal },
+      )
+      for (const story of chunk) {
+        const newest = latestIso(
+          story.lastModified,
+          ...(childrenMap.get(story.id) ?? []).map((child) => child.modifiedTime),
+        )
+        if (newest !== undefined && newest !== story.lastModified) changed.set(story.id, newest)
+      }
+    },
+    DRIVE_CONCURRENCY,
+  )
+
+  return changed
 }
 
 /** Folder đang mở rộng khi quét (truyện hoặc nhóm) — mang theo ngày để đưa vào ChapterRef */
@@ -285,13 +457,17 @@ export async function ensureChapterFiles(
   return chapter
 }
 
-/** Danh sách truyện = các folder con trực tiếp của kho, sort tự nhiên theo tên. */
-export async function scanLibraryStories(
+/**
+ * Danh sách truyện = các folder con trực tiếp của kho, sort tự nhiên theo tên.
+ * Chỉ 1 request — ngày cập nhật hiệu dụng và chapter do `walkLibrary` quét
+ * thêm sau (render danh sách ngay không cần chờ).
+ */
+export async function listStories(
   libraryFolderId: string,
-  options: { signal?: AbortSignal; groupMarks?: Set<string> } = {},
+  options: { signal?: AbortSignal } = {},
 ): Promise<StorySummary[]> {
   const children = await listChildren(libraryFolderId, { signal: options.signal })
-  const stories = naturalSort(
+  return naturalSort(
     children.filter(isFolder).map((file) => ({
       id: file.id,
       name: file.name,
@@ -299,6 +475,4 @@ export async function scanLibraryStories(
     })),
     (story) => story.name,
   )
-  await annotateLastModified(stories, options)
-  return stories
 }

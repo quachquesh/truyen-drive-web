@@ -30,6 +30,16 @@ const folders: Record<string, DriveItem[]> = {
   g1a: [folder('c-5d', '5', '2026-09-16T12:00:00.000Z')],
   'c-5d': [file('p.jpg', 'image/jpeg')],
   'c-9': [file('q.jpg', 'image/jpeg')],
+  // Truyện có chap mới hơn mốc cache (fetchNewChapters): nhóm "nhom" bị bump
+  // ngày 17/09 vì chap "8" mới thêm vào bên trong
+  inc: [
+    folder('i-1', '1', '2026-08-01T00:00:00.000Z'),
+    folder('i-grp', 'nhom', '2026-09-17T06:00:00.000Z'),
+    folder('i-9', '9', '2026-09-17T09:00:00.000Z'),
+  ],
+  'i-grp': [folder('i-5', '5', '2026-08-10T00:00:00.000Z'), folder('i-8', '8', '2026-09-17T08:00:00.000Z')],
+  // Chapter bị sửa (đổi tên) sau mốc cache — fetchNewChapters merge theo id
+  ren: [folder('r-1', 'New', '2026-09-17T00:00:00.000Z')],
   // Trộn cả ảnh lẫn PDF → ensureChapterFiles ưu tiên ảnh
   mixed: [file('a.jpg', 'image/jpeg'), file('all.pdf', 'application/pdf')],
   // Folder thật sự trống (không file đọc được)
@@ -56,6 +66,7 @@ const isFolderItem = (item: DriveItem): boolean =>
 const queriedParents = new Set<string>()
 
 vi.mock('../driveApi', () => ({
+  DRIVE_CONCURRENCY: 3,
   listChildrenGrouped: vi.fn<
     (parentIds: string[], options?: { foldersOnly?: boolean }) => Promise<Map<string, DriveItem[]>>
   >(async (parentIds, options) => {
@@ -64,6 +75,27 @@ vi.mock('../driveApi', () => ({
       queriedParents.add(id)
       const children = structuredClone(folders[id] ?? [])
       map.set(id, options?.foldersOnly ? children.filter(isFolderItem) : children)
+    }
+    return map
+  }),
+  listNewChildren: vi.fn<
+    (
+      parentIds: string[],
+      sinceIso: string,
+      options?: { foldersOnly?: boolean },
+    ) => Promise<Map<string, DriveItem[]>>
+  >(async (parentIds, sinceIso, options) => {
+    const map = new Map<string, DriveItem[]>()
+    const since = new Date(sinceIso).getTime()
+    for (const id of parentIds) {
+      queriedParents.add(id)
+      const children = (folders[id] ?? [])
+        .filter((item) => (options?.foldersOnly ? isFolderItem(item) : true))
+        .filter((item) => {
+          if (!item.modifiedTime) return false
+          return new Date(item.modifiedTime).getTime() > since
+        })
+      if (children.length > 0) map.set(id, structuredClone(children))
     }
     return map
   }),
@@ -84,11 +116,22 @@ vi.mock('../db', () => ({
   }),
 }))
 
-import { listChildren, listChildrenGrouped } from '../driveApi'
-import { ensureChapterFiles, latestIso, scanLibraryStories, scanStories, scanStory } from '../scanner'
+import { listChildren, listNewChildren } from '../driveApi'
+import {
+  ensureChapterFiles,
+  fetchNewChapters,
+  latestIso,
+  listStories,
+  refreshStoryDates,
+  scanStories,
+  scanStory,
+  walkLibrary,
+  type ChapterRef,
+} from '../scanner'
 
 beforeEach(() => {
   vi.mocked(listChildren).mockClear()
+  vi.mocked(listNewChildren).mockClear()
   cacheStore.clear()
   queriedParents.clear()
 })
@@ -235,50 +278,176 @@ describe('ensureChapterFiles (lazy — chỉ lấy khi mở chapter)', () => {
   })
 })
 
-describe('scanLibraryStories', () => {
+describe('listStories (bước 1 — 1 request, không kèm quét)', () => {
   it('chỉ lấy folder con, sort tự nhiên, giữ ngày sửa đổi', async () => {
-    const stories = await scanLibraryStories('root')
+    const stories = await listStories('root')
     expect(stories.map((story) => story.name)).toEqual(['0-30', '31', '32'])
     expect(stories.find((story) => story.name === '32')?.modifiedTime).toBeUndefined()
     expect(stories.find((story) => story.name === '31')?.modifiedTime).toBe(
       '2026-09-15T08:00:00.000Z',
     )
+    // Chỉ list folder kho — chưa tốn request nào cho con của truyện
+    expect(queriedParents).toEqual(new Set(['root']))
   })
+})
 
-  it('lastModified = max(ngày folder, ngày con trực tiếp) — chap mới 16/09 bump được ngày 23/08', async () => {
-    const stories = await scanLibraryStories('root')
+describe('walkLibrary (bước 2 — quét hợp nhất 1 lượt)', () => {
+  it('lastModified mọi truyện = max(ngày folder, ngày con trực tiếp), không cần đánh dấu', async () => {
+    const result = await walkLibrary([
+      { id: 'f-0-30', name: '0-30', modifiedTime: '2026-08-23T00:00:00.000Z' },
+      { id: 'f-31', name: '31', modifiedTime: '2026-09-15T08:00:00.000Z' },
+      { id: 'f-32', name: '32' },
+    ])
     // Truyện "0-30": folder đứng ở 23/08 nhưng chap con "10" up 16/09
-    expect(stories.find((story) => story.name === '0-30')?.lastModified).toBe(
-      '2026-09-16T10:00:00.000Z',
-    )
+    expect(result.lastModified.get('f-0-30')).toBe('2026-09-16T10:00:00.000Z')
     // Truyện "31": con trực tiếp chỉ là file (bỏ qua) → giữ ngày folder
-    expect(stories.find((story) => story.name === '31')?.lastModified).toBe(
-      '2026-09-15T08:00:00.000Z',
-    )
+    expect(result.lastModified.get('f-31')).toBe('2026-09-15T08:00:00.000Z')
+    // Chưa đánh dấu truyện nào → không quét chapter
+    expect(result.chapters.size).toBe(0)
+    // Mỗi folder chỉ bị query đúng 1 lần (tầng 0 duy nhất)
+    expect(queriedParents).toEqual(new Set(['f-0-30', 'f-31', 'f-32']))
   })
 
-  it('chap mới trong nhóm lồng nhau cũng bump lastModified khi đã đánh dấu nhóm', async () => {
-    const marked = await scanLibraryStories('deep', { groupMarks: new Set(['g1', 'g1a']) })
-    // "5" nằm sâu 2 tầng nhóm (deep > Phần 1 > Tập 1 > 5) — descend qua nhóm đã đánh dấu
-    expect(marked.find((story) => story.name === 'Phần 1')?.lastModified).toBe(
-      '2026-09-16T12:00:00.000Z',
+  it('truyện đánh dấu: chapter đúng 1 cấp tự động + nhóm bung con lên cùng cấp', async () => {
+    const result = await walkLibrary(
+      [
+        { id: 'root', name: 'Truyện A' },
+        { id: 'deep', name: 'Truyện Deep' },
+      ],
+      { markedStoryIds: new Set(['root', 'deep']), groupMarks: new Set(['f-0-30', 'g1', 'g1a']) },
     )
+    expect(result.chapters.get('root')?.map((chapter) => chapter.name)).toEqual([
+      '0',
+      '2',
+      '5',
+      '10',
+      '31',
+      '32',
+    ])
+    expect(result.chapters.get('deep')?.map((chapter) => chapter.name)).toEqual(['5', '9'])
   })
 
-  it('chưa đánh dấu nhóm → không descend, chỉ max con trực tiếp', async () => {
-    const unmarked = await scanLibraryStories('deep')
-    expect(unmarked.find((story) => story.name === 'Phần 1')?.lastModified).toBe(
+  it('nhóm CHỈ bung trong subtree truyện đánh dấu — truyện thường không tốn thêm request', async () => {
+    const result = await walkLibrary(
+      [
+        { id: 'root', name: 'A' },
+        { id: 'deep', name: 'B' },
+      ],
+      { markedStoryIds: new Set(['root']), groupMarks: new Set(['f-0-30', 'g1', 'g1a']) },
+    )
+    expect(result.chapters.has('deep')).toBe(false)
+    // Nhóm của truyện KHÔNG đánh dấu không bị mở rộng
+    expect(queriedParents.has('g1')).toBe(false)
+    // Nhóm của truyện đánh dấu vẫn bung (query f-0-30 ở tầng 0 + tầng 1)
+    expect(queriedParents.has('f-0-30')).toBe(true)
+    // Folder chapter không bao giờ bị query (chỉ là lá)
+    expect(queriedParents.has('c-10')).toBe(false)
+  })
+
+  it('truyện đánh dấu: chap trong nhóm lồng sâu vẫn tính chapter + bump lastModified', async () => {
+    // g1 (Phần 1) là truyện đánh dấu, g1a (Tập 1) là nhóm — "5" nằm sâu 2 tầng
+    const result = await walkLibrary(
+      [{ id: 'g1', name: 'Phần 1', modifiedTime: '2026-08-01T00:00:00.000Z' }],
+      { markedStoryIds: new Set(['g1']), groupMarks: new Set(['g1a']) },
+    )
+    expect(result.lastModified.get('g1')).toBe('2026-09-16T12:00:00.000Z')
+    expect(result.chapters.get('g1')?.map((chapter) => chapter.name)).toEqual(['5'])
+  })
+
+  it('truyện rỗng đánh dấu vẫn tính 1 chapter để không mất truyện', async () => {
+    const result = await walkLibrary([{ id: 'c-empty', name: 'Empty' }], {
+      markedStoryIds: new Set(['c-empty']),
+    })
+    expect(result.chapters.get('c-empty')).toHaveLength(1)
+  })
+
+  it('onDates/onLevelDone báo tiến triển sau từng tầng', async () => {
+    const dateSnapshots: number[] = []
+    const counts: number[] = []
+    await walkLibrary([{ id: 'root', name: 'A' }], {
+      markedStoryIds: new Set(['root']),
+      groupMarks: new Set(['f-0-30']),
+      onDates: (latest) => dateSnapshots.push(latest.size),
+      onLevelDone: (levelCounts) => counts.push(levelCounts.get('root') ?? 0),
+    })
+    // Tầng 0 (con trực tiếp) + tầng 1 (trong nhóm)
+    expect(dateSnapshots).toEqual([1, 1])
+    expect(counts).toEqual([2, 6]) // 31,32 rồi bung nhóm thêm 0,2,5,10
+  })
+})
+
+describe('fetchNewChapters (incremental — chỉ lấy phần mới hơn mốc cache)', () => {
+  const cached: ChapterRef[] = [
+    { id: 'i-1', name: '1', modifiedTime: '2026-08-01T00:00:00.000Z' },
+    { id: 'i-5', name: '5', modifiedTime: '2026-08-10T00:00:00.000Z' },
+  ]
+
+  it('merge chap mới trực tiếp + chap mới trong nhóm bị bump ngày', async () => {
+    const chapters = await fetchNewChapters('inc', cached, { groupMarks: new Set(['i-grp']) })
+    expect(chapters?.map((chapter) => chapter.name)).toEqual(['1', '5', '8', '9'])
+    // Chỉ query truyện (tầng 0) và nhóm bị bump (tầng 1) — không list lại toàn bộ
+    expect(queriedParents).toEqual(new Set(['inc', 'i-grp']))
+  })
+
+  it('chapter bị sửa (cùng id, đổi tên) → cập nhật tại chỗ, không nhân đôi', async () => {
+    const chapters = await fetchNewChapters('ren', [
+      { id: 'r-1', name: 'Old', modifiedTime: '2026-08-01T00:00:00.000Z' },
+    ])
+    expect(chapters).toEqual([
+      { id: 'r-1', name: 'New', modifiedTime: '2026-09-17T00:00:00.000Z' },
+    ])
+  })
+
+  it('không có gì mới hơn mốc → trả lại đúng cache', async () => {
+    const chapters = await fetchNewChapters('deep', [
+      { id: 'c-9', name: '9', modifiedTime: '2026-09-17T00:00:00.000Z' },
+    ])
+    expect(chapters).toEqual([{ id: 'c-9', name: '9', modifiedTime: '2026-09-17T00:00:00.000Z' }])
+  })
+
+  it('cache thiếu modifiedTime → trả null để caller quét full', async () => {
+    const chapters = await fetchNewChapters('inc', [
+      { id: 'i-1', name: '1' },
+      { id: 'i-5', name: '5', modifiedTime: '2026-08-10T00:00:00.000Z' },
+    ])
+    expect(chapters).toBeNull()
+    expect(queriedParents.size).toBe(0)
+  })
+})
+
+describe('refreshStoryDates (Làm mới — chỉ lấy phần mới hơn mốc cũ)', () => {
+  it('truyện có folder con mới hơn mốc → mốc mới; không có gì mới → không xuất hiện', async () => {
+    const changed = await refreshStoryDates([
+      // c-10 (16/09) không mới hơn mốc 16/09 → không đổi
+      { id: 'f-0-30', name: '0-30', lastModified: '2026-09-16T10:00:00.000Z' },
+      // con trực tiếp chỉ là file (foldersOnly) → không đổi
+      { id: 'f-31', name: '31', lastModified: '2026-09-14T00:00:00.000Z' },
+      // c-9 (05/08) mới hơn mốc 01/08 → bump
+      { id: 'deep', name: 'Deep', lastModified: '2026-08-01T00:00:00.000Z' },
+    ])
+    expect(changed.get('deep')).toBe('2026-08-05T00:00:00.000Z')
+    expect(changed.has('f-0-30')).toBe(false)
+    expect(changed.has('f-31')).toBe(false)
+  })
+
+  it('chunk dùng mốc cũ nhất trong chunk (sort theo lastModified trước)', async () => {
+    await refreshStoryDates([
+      { id: 'f-0-30', name: '0-30', lastModified: '2026-09-16T10:00:00.000Z' },
+      { id: 'f-31', name: '31', lastModified: '2026-09-14T00:00:00.000Z' },
+      { id: 'deep', name: 'Deep', lastModified: '2026-08-01T00:00:00.000Z' },
+    ])
+    expect(listNewChildren).toHaveBeenCalledTimes(1)
+    expect(listNewChildren).toHaveBeenCalledWith(
+      ['deep', 'f-31', 'f-0-30'],
       '2026-08-01T00:00:00.000Z',
+      expect.anything(),
     )
   })
 
-  it('request annotate lỗi → fallback lastModified = modifiedTime, không chặn danh sách', async () => {
-    vi.mocked(listChildrenGrouped).mockRejectedValueOnce(new Error('500'))
-    const stories = await scanLibraryStories('root')
-    expect(stories.map((story) => story.name)).toEqual(['0-30', '31', '32'])
-    expect(stories.find((story) => story.name === '0-30')?.lastModified).toBe(
-      '2026-08-23T00:00:00.000Z',
-    )
+  it('truyện thiếu lastModified bị bỏ qua — không tốn request', async () => {
+    const changed = await refreshStoryDates([{ id: 'f-31', name: '31' }])
+    expect(changed.size).toBe(0)
+    expect(queriedParents.size).toBe(0)
   })
 })
 

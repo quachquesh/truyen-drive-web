@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { watchEffect } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import type { ChapterRef, StorySummary, StoryScanResult, WalkLibraryResult } from '@/lib/scanner'
@@ -318,6 +319,62 @@ describe('storiesStore.openLibrary (không auto-detect)', () => {
     resolveList([{ id: 'story-9', name: 'Truyện 9', modifiedTime: '2026-09-16T08:00:00.000Z' }])
     await refreshing
     expect(storiesStore.stories.map((story) => story.id)).toEqual(['story-9'])
+  })
+
+  it('Làm mới (force) khôi phục lastModified QUA reactive — card không kẹt ngày fallback (regression)', async () => {
+    setupLibrary()
+    cacheStore.set('stories:uuid-noi-bo', {
+      key: 'stories:uuid-noi-bo',
+      data: [
+        {
+          id: 'story-1',
+          name: 'Truyện 1',
+          modifiedTime: '2026-09-15T08:00:00.000Z',
+          lastModified: '2026-09-15T08:00:00.000Z',
+        },
+      ],
+      fetchedAt: 1,
+    })
+    const storiesStore = useStoriesStore()
+
+    // Giả lập computed của StoryCard — chỉ chạy lại khi mutation đi QUA reactive
+    let seen: string | undefined
+    const stop = watchEffect(
+      () => {
+        seen = storiesStore.stories.find((story) => story.id === 'story-1')?.lastModified
+      },
+      { flush: 'sync' },
+    )
+
+    await storiesStore.openLibrary('uuid-noi-bo')
+    expect(seen).toBe('2026-09-15T08:00:00.000Z')
+
+    // Làm mới: listStories chỉ có modifiedTime → watcher thấy undefined giữa
+    // chừng (card fallback sang ngày folder) — xong PHẢI thấy lại ngày đã khôi
+    // phục; bug cũ patch trên bản raw → watcher kẹt undefined vĩnh viễn
+    await storiesStore.openLibrary('uuid-noi-bo', { force: true })
+    expect(seen).toBe('2026-09-15T08:00:00.000Z')
+    stop()
+  })
+
+  it('cold: ngày từ walkLibrary tới được watcher của truyện CHƯA đánh dấu (regression)', async () => {
+    setupLibrary()
+    const storiesStore = useStoriesStore()
+
+    let seen: string | undefined
+    const stop = watchEffect(
+      () => {
+        seen = storiesStore.stories.find((story) => story.id === 'story-1')?.lastModified
+      },
+      { flush: 'sync' },
+    )
+
+    await storiesStore.openLibrary('uuid-noi-bo')
+
+    // Truyện thường không có counts/scanning trigger bọc ngoài — ngày vẫn phải
+    // tới được watcher (bug cũ: onDates patch bản raw → kẹt undefined)
+    expect(seen).toBe('2026-09-15T08:00:00.000Z')
+    stop()
   })
 
   it('lastModified mới hơn chapter trong cache → chỉ lấy phần mới (incremental)', async () => {

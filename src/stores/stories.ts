@@ -212,14 +212,16 @@ export const useStoriesStore = defineStore('stories', {
 
         if (knownDates) {
           // Làm mới: gắn ngày cũ vào danh sách mới rồi chỉ lấy PHẦN THAY ĐỔI —
-          // ~vài request nhỏ thay vì quét lại toàn kho
-          for (const story of freshStories) story.lastModified = knownDates.get(story.id)
+          // ~vài request nhỏ thay vì quét lại toàn kho.
+          // Patch QUA this.stories (proxy reactive) — sửa trên bản raw
+          // freshStories thì card không re-render (Vue không thấy mutation)
+          for (const story of this.stories) story.lastModified = knownDates.get(story.id)
           const toWalk = freshStories.filter((story) => story.lastModified === undefined)
           try {
             const changed = await refreshStoryDates(freshStories)
             if (gen !== this.gen) return
             for (const [storyId, lastModified] of changed) {
-              const story = freshStories.find((item) => item.id === storyId)
+              const story = this.stories.find((item) => item.id === storyId)
               if (story) story.lastModified = lastModified
             }
           } catch (error) {
@@ -262,7 +264,9 @@ export const useStoriesStore = defineStore('stories', {
           groupMarks: this.groupMarkSet(),
           onDates: (latest) => {
             if (gen !== this.gen) return
-            for (const story of stories) {
+            // Patch qua this.stories (proxy reactive) — stories là bản raw,
+            // mutation trên nó không làm card re-render
+            for (const story of this.stories) {
               const lastModified = latest.get(story.id)
               if (lastModified !== undefined) story.lastModified = lastModified
             }

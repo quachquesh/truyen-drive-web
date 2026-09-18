@@ -322,6 +322,9 @@ export async function refreshStoryDates(
       for (const story of chunk) {
         const newest = latestIso(
           story.lastModified,
+          // Ngày folder tươi từ listStories — folder bị bump mà không có con
+          // mới (đổi tên...) vẫn phải lên ngày, khớp seed modifiedTime của walkLibrary
+          story.modifiedTime,
           ...(childrenMap.get(story.id) ?? []).map((child) => child.modifiedTime),
         )
         if (newest !== undefined && newest !== story.lastModified) changed.set(story.id, newest)

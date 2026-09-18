@@ -459,6 +459,20 @@ describe('refreshStoryDates (Làm mới — chỉ lấy phần mới hơn mốc 
     expect(changed.has('f-31')).toBe(false)
   })
 
+  it('modifiedTime của folder mới hơn mốc (folder bị đổi tên...) → bump lên ngày folder', async () => {
+    const changed = await refreshStoryDates([
+      {
+        id: 'f-0-30',
+        name: '0-30',
+        modifiedTime: '2026-09-18T00:00:00.000Z',
+        lastModified: '2026-09-16T10:00:00.000Z',
+      },
+    ])
+    // Không có con mới (c-10 đúng bằng mốc, phần còn lại thiếu ngày) — chỉ ngày
+    // folder tươi từ listStories kéo lastModified lên, khớp walkLibrary cold
+    expect(changed.get('f-0-30')).toBe('2026-09-18T00:00:00.000Z')
+  })
+
   it('chunk dùng mốc cũ nhất trong chunk (sort theo lastModified trước)', async () => {
     await refreshStoryDates([
       { id: 'f-0-30', name: '0-30', lastModified: '2026-09-16T10:00:00.000Z' },

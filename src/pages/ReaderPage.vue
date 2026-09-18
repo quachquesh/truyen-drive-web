@@ -8,12 +8,13 @@ import PdfReader from "@/components/PdfReader.vue";
 import ReaderImage from "@/components/ReaderImage.vue";
 import AppIcon from "@/components/AppIcon.vue";
 import { toErrorMessage } from "@/lib/driveApi";
-import { getProgress, putProgress } from "@/lib/db";
+import { getCache, getProgress, putProgress } from "@/lib/db";
 import {
   ensureChapterFiles,
   type ChapterFile,
   type ChapterRef,
   type ChapterWithFiles,
+  type StorySummary,
 } from "@/lib/scanner";
 import { useStoriesStore } from "@/stores/stories";
 import { useSyncStore } from "@/stores/sync";
@@ -51,6 +52,19 @@ const chapterIndex = computed(() =>
 );
 const prevChapter = computed(() => chapters.value[chapterIndex.value - 1]);
 const nextChapter = computed(() => chapters.value[chapterIndex.value + 1]);
+
+/** Title mặc định của tab — khớp <title> trong index.html, phục hồi khi rời reader */
+const BASE_TITLE = "Truyện Drive";
+
+/** Title tab = tên truyện đang đọc (store trước, cache danh sách truyện sau) */
+async function resolveStoryName(): Promise<void> {
+  let name = storiesStore.storyName(storyId.value);
+  if (!name) {
+    const cached = await getCache<StorySummary[]>(`stories:${libId.value}`);
+    name = cached?.data.find((story) => story.id === storyId.value)?.name ?? "";
+  }
+  if (name && document.title !== name) document.title = name;
+}
 
 /** Bộ chọn chapter nhanh trên toolbar — gõ tên/số trong tên chapter là nhảy được */
 const chapterOptions = computed(() =>
@@ -214,6 +228,7 @@ function onKeydown(event: KeyboardEvent): void {
 }
 
 onMounted(() => {
+  void resolveStoryName();
   void loadChapter(false);
   window.addEventListener("keydown", onKeydown);
 });
@@ -222,6 +237,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKeydown);
   window.clearTimeout(saveTimer);
   void saveProgress();
+  document.title = BASE_TITLE;
 });
 
 // Điều hướng next/prev trong cùng component → nạp chapter mới, cuộn lên đầu
@@ -235,6 +251,9 @@ watch(chapterId, () => {
   });
   void loadChapter(false);
 });
+
+// Đổi truyện khi đang ở reader (URL trực tiếp) → cập nhật title theo truyện mới
+watch(storyId, () => void resolveStoryName());
 </script>
 
 <template>

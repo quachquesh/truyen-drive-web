@@ -138,9 +138,10 @@ beforeEach(() => {
 
 describe('scanStories / scanStory (1 cấp tự động + đánh dấu nhóm)', () => {
   it('KHÔNG đánh dấu → danh sách chapter = đúng con trực tiếp (kể cả nhóm)', async () => {
-    const chapters = await scanStory('root')
+    const { chapters, groups } = await scanStory('root')
     // "0-30" là nhóm nhưng chưa đánh dấu → hiện nguyên là 1 dòng chapter
     expect(chapters.map((chapter) => chapter.name)).toEqual(['0-30', '31', '32'])
+    expect(groups).toEqual([])
     // Chỉ query đúng 1 cấp — không đụng tới con của 0-30
     expect(queriedParents.has('root')).toBe(true)
     expect(queriedParents.has('f-0-30')).toBe(false)
@@ -148,25 +149,38 @@ describe('scanStories / scanStory (1 cấp tự động + đánh dấu nhóm)', 
   })
 
   it('đánh dấu 0-80 kiểu nhóm → con được đưa lên cùng cấp với 31, 32', async () => {
-    const chapters = await scanStory('root', { groupMarks: new Set(['f-0-30']) })
+    const { chapters, groups } = await scanStory('root', { groupMarks: new Set(['f-0-30']) })
     expect(chapters.map((chapter) => chapter.name)).toEqual(['0', '2', '5', '10', '31', '32'])
     // Nhóm bị thay thế bởi con của nó — không hiện "0-30" nữa
     expect(chapters.some((chapter) => chapter.name === '0-30')).toBe(false)
+    // Nhóm đã đánh dấu được ghi lại (để biết nhóm nào thuộc truyện nào)
+    expect(groups).toEqual([{ id: 'f-0-30', name: '0-30' }])
   })
 
   it('nhóm đánh dấu mà rỗng → bỏ qua (không thành chapter trống)', async () => {
-    const chapters = await scanStory('root', { groupMarks: new Set(['f-32']) })
+    const { chapters, groups } = await scanStory('root', { groupMarks: new Set(['f-32']) })
     expect(chapters.map((chapter) => chapter.name)).toEqual(['0-30', '31'])
+    // Nhóm rỗng vẫn được ghi lại
+    expect(groups).toEqual([{ id: 'f-32', name: '32' }])
   })
 
   it('nhóm lồng nhau: đánh dấu cả 2 tầng mới bung hết', async () => {
     // chỉ đánh dấu tầng ngoài
-    const one = await scanStory('deep', { groupMarks: new Set(['g1']) })
+    const { chapters: one, groups: oneGroups } = await scanStory('deep', {
+      groupMarks: new Set(['g1']),
+    })
     expect(one.map((chapter) => chapter.name)).toEqual(['9', 'Tập 1'])
+    expect(oneGroups).toEqual([{ id: 'g1', name: 'Phần 1' }])
 
     // đánh dấu cả tầng trong
-    const both = await scanStory('deep', { groupMarks: new Set(['g1', 'g1a']) })
+    const { chapters: both, groups: bothGroups } = await scanStory('deep', {
+      groupMarks: new Set(['g1', 'g1a']),
+    })
     expect(both.map((chapter) => chapter.name)).toEqual(['5', '9'])
+    expect(bothGroups).toEqual([
+      { id: 'g1', name: 'Phần 1' },
+      { id: 'g1a', name: 'Tập 1' },
+    ])
   })
 
   it('quét nhiều truyện batch, chapter về đúng truyện gốc', async () => {
@@ -177,7 +191,7 @@ describe('scanStories / scanStory (1 cấp tự động + đánh dấu nhóm)', 
       ],
       { groupMarks: new Set(['f-0-30', 'g1', 'g1a']) },
     )
-    expect(results.get('root')?.map((chapter) => chapter.name)).toEqual([
+    expect(results.get('root')?.chapters.map((chapter) => chapter.name)).toEqual([
       '0',
       '2',
       '5',
@@ -185,12 +199,17 @@ describe('scanStories / scanStory (1 cấp tự động + đánh dấu nhóm)', 
       '31',
       '32',
     ])
-    expect(results.get('deep')?.map((chapter) => chapter.name)).toEqual(['5', '9'])
+    expect(results.get('deep')?.chapters.map((chapter) => chapter.name)).toEqual(['5', '9'])
+    expect(results.get('root')?.groups).toEqual([{ id: 'f-0-30', name: '0-30' }])
+    expect(results.get('deep')?.groups).toEqual([
+      { id: 'g1', name: 'Phần 1' },
+      { id: 'g1a', name: 'Tập 1' },
+    ])
   })
 
   it('báo số chapter tăng dần qua onChapterFound', async () => {
     const seen: number[] = []
-    const chapters = await scanStory('root', {
+    const { chapters } = await scanStory('root', {
       groupMarks: new Set(['f-0-30']),
       onChapterFound: (count) => seen.push(count),
     })
@@ -199,12 +218,12 @@ describe('scanStories / scanStory (1 cấp tự động + đánh dấu nhóm)', 
   })
 
   it('truyện rỗng vẫn tính 1 chapter để không mất truyện', async () => {
-    const chapters = await scanStory('c-empty')
+    const { chapters } = await scanStory('c-empty')
     expect(chapters).toHaveLength(1)
   })
 
   it('chapter giữ modifiedTime của folder chapter (kể cả chap trong nhóm)', async () => {
-    const chapters = await scanStory('root', { groupMarks: new Set(['f-0-30']) })
+    const { chapters } = await scanStory('root', { groupMarks: new Set(['f-0-30']) })
     expect(chapters.find((chapter) => chapter.name === '31')?.modifiedTime).toBe(
       '2026-09-15T08:00:00.000Z',
     )
@@ -302,8 +321,9 @@ describe('walkLibrary (bước 2 — quét hợp nhất 1 lượt)', () => {
     expect(result.lastModified.get('f-0-30')).toBe('2026-09-16T10:00:00.000Z')
     // Truyện "31": con trực tiếp chỉ là file (bỏ qua) → giữ ngày folder
     expect(result.lastModified.get('f-31')).toBe('2026-09-15T08:00:00.000Z')
-    // Chưa đánh dấu truyện nào → không quét chapter
+    // Chưa đánh dấu truyện nào → không quét chapter, không nhóm
     expect(result.chapters.size).toBe(0)
+    expect(result.groups.size).toBe(0)
     // Mỗi folder chỉ bị query đúng 1 lần (tầng 0 duy nhất)
     expect(queriedParents).toEqual(new Set(['f-0-30', 'f-31', 'f-32']))
   })
@@ -325,9 +345,15 @@ describe('walkLibrary (bước 2 — quét hợp nhất 1 lượt)', () => {
       '32',
     ])
     expect(result.chapters.get('deep')?.map((chapter) => chapter.name)).toEqual(['5', '9'])
+    // Nhóm đã đánh dấu gặp trong subtree được ghi lại theo truyện
+    expect(result.groups.get('root')).toEqual([{ id: 'f-0-30', name: '0-30' }])
+    expect(result.groups.get('deep')).toEqual([
+      { id: 'g1', name: 'Phần 1' },
+      { id: 'g1a', name: 'Tập 1' },
+    ])
   })
 
-  it('nhóm CHỈ bung trong subtree truyện đánh dấu — truyện thường không tốn thêm request', async () => {
+  it('nhóm CHỦ bung trong subtree truyện đánh dấu — truyện thường không tốn thêm request', async () => {
     const result = await walkLibrary(
       [
         { id: 'root', name: 'A' },
@@ -336,6 +362,8 @@ describe('walkLibrary (bước 2 — quét hợp nhất 1 lượt)', () => {
       { markedStoryIds: new Set(['root']), groupMarks: new Set(['f-0-30', 'g1', 'g1a']) },
     )
     expect(result.chapters.has('deep')).toBe(false)
+    expect(result.groups.has('deep')).toBe(false)
+    expect(result.groups.get('root')).toEqual([{ id: 'f-0-30', name: '0-30' }])
     // Nhóm của truyện KHÔNG đánh dấu không bị mở rộng
     expect(queriedParents.has('g1')).toBe(false)
     // Nhóm của truyện đánh dấu vẫn bung (query f-0-30 ở tầng 0 + tầng 1)

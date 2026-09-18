@@ -20,6 +20,8 @@ import {
   scanStory,
   walkLibrary,
   type ChapterRef,
+  type GroupRef,
+  type StoryScanResult,
   type StorySummary,
 } from '@/lib/scanner'
 import { markTombstoneKey } from '@/lib/sync'
@@ -42,6 +44,18 @@ function isChaptersCacheFresh(chapters: ChapterRef[], story: StorySummary): bool
   // Thiếu ngày để so (cache rỗng, Drive không trả ngày) → giữ cache như cũ
   if (cachedLatest === undefined || Number.isNaN(storyTime)) return true
   return storyTime <= new Date(cachedLatest).getTime()
+}
+
+/**
+ * Đọc cache chapter `chapters:${storyId}`: bản mới là `{chapters, groups}`;
+ * bản cũ (bare array, trước khi có nhóm) coi như MISS → quét lại 1 lần cho đủ.
+ */
+function parseChaptersCache(data: unknown): StoryScanResult | null {
+  if (!data || typeof data !== 'object' || !Array.isArray((data as StoryScanResult).chapters)) {
+    return null
+  }
+  const record = data as StoryScanResult
+  return { chapters: record.chapters, groups: record.groups ?? [] }
 }
 
 /**
@@ -74,6 +88,8 @@ export const useStoriesStore = defineStore('stories', {
     marks: {} as Record<string, 'story'>,
     /** Đánh dấu "là nhóm chapter" của user: folderId → true */
     groups: {} as Record<string, true>,
+    /** storyId → các nhóm đã đánh dấu gặp khi quét subtree (để Hủy nhóm trong StoryPage) */
+    groupsByStory: {} as Record<string, GroupRef[]>,
     /** Đánh dấu "là danh sách nhiều truyện" của user: folderId → true */
     lists: {} as Record<string, true>,
     marksLoaded: false,
@@ -268,10 +284,12 @@ export const useStoriesStore = defineStore('stories', {
         })
         if (gen !== this.gen) return
         for (const [storyId, chapters] of result.chapters) {
-          await setCache(chaptersKey(storyId), chapters)
+          const groups = result.groups.get(storyId) ?? []
+          await setCache(chaptersKey(storyId), { chapters, groups })
           if (gen !== this.gen) return
           this.counts[storyId] = chapters.length
           this.latest[storyId] = chapters[chapters.length - 1]?.name ?? ''
+          this.groupsByStory[storyId] = groups
         }
       } catch {
         for (const story of stories) story.lastModified = story.modifiedTime
@@ -292,15 +310,21 @@ export const useStoriesStore = defineStore('stories', {
      */
     async refreshMarkedChapters(stories: StorySummary[], gen: number): Promise<void> {
       const marked = stories.filter((story) => this.marks[story.id])
-      const incremental: Array<{ story: StorySummary; cached: ChapterRef[] }> = []
+      const incremental: Array<{ story: StorySummary; cached: ChapterRef[]; groups: GroupRef[] }> =
+        []
       const uncached: StorySummary[] = []
       for (const story of marked) {
-        const cached = await getCache<ChapterRef[]>(chaptersKey(story.id))
-        if (cached && isChaptersCacheFresh(cached.data, story)) {
-          this.counts[story.id] = cached.data.length
-          this.latest[story.id] = cached.data[cached.data.length - 1]?.name ?? ''
-        } else if (cached && !cached.data.some((chapter) => chapter.modifiedTime === undefined)) {
-          incremental.push({ story, cached: cached.data })
+        const cached = await getCache<StoryScanResult>(chaptersKey(story.id))
+        const record = cached ? parseChaptersCache(cached.data) : null
+        if (record && isChaptersCacheFresh(record.chapters, story)) {
+          this.counts[story.id] = record.chapters.length
+          this.latest[story.id] = record.chapters[record.chapters.length - 1]?.name ?? ''
+          this.groupsByStory[story.id] = record.groups
+        } else if (
+          record &&
+          !record.chapters.some((chapter) => chapter.modifiedTime === undefined)
+        ) {
+          incremental.push({ story, cached: record.chapters, groups: record.groups })
         } else {
           uncached.push(story)
         }
@@ -313,15 +337,15 @@ export const useStoriesStore = defineStore('stories', {
       try {
         const merged = await pooledMap(
           incremental,
-          async ({ story, cached }) => {
+          async ({ story, cached, groups }) => {
             try {
               const chapters = await fetchNewChapters(story.id, cached, {
                 groupMarks: this.groupMarkSet(),
               })
-              return { story, chapters, error: '' }
+              return { story, chapters, groups, error: '' }
             } catch (error) {
               // Lỗi mạng riêng truyện — không throw để truyện khác vẫn chạy
-              return { story, chapters: null, error: toErrorMessage(error) }
+              return { story, chapters: null, groups, error: toErrorMessage(error) }
             }
           },
           DRIVE_CONCURRENCY,
@@ -329,16 +353,18 @@ export const useStoriesStore = defineStore('stories', {
         if (gen !== this.gen) return
 
         const fullScan = [...uncached]
-        for (const { story, chapters, error } of merged) {
+        for (const { story, chapters, groups, error } of merged) {
           if (chapters === null) {
             if (error) this.scanErrors[story.id] = error
             // fetchNewChapters trả null (cache không merge được) → quét full
             else fullScan.push(story)
             continue
           }
-          await setCache(chaptersKey(story.id), chapters)
+          // Incremental không gặp lại nhóm cũ → giữ nguyên groups từ cache
+          await setCache(chaptersKey(story.id), { chapters, groups })
           this.counts[story.id] = chapters.length
           this.latest[story.id] = chapters[chapters.length - 1]?.name ?? ''
+          this.groupsByStory[story.id] = groups
         }
 
         if (fullScan.length === 0) return
@@ -350,10 +376,11 @@ export const useStoriesStore = defineStore('stories', {
           },
         })
         if (gen !== this.gen) return
-        for (const [storyId, chapters] of results) {
-          await setCache(chaptersKey(storyId), chapters)
-          this.counts[storyId] = chapters.length
-          this.latest[storyId] = chapters[chapters.length - 1]?.name ?? ''
+        for (const [storyId, scan] of results) {
+          await setCache(chaptersKey(storyId), scan)
+          this.counts[storyId] = scan.chapters.length
+          this.latest[storyId] = scan.chapters[scan.chapters.length - 1]?.name ?? ''
+          this.groupsByStory[storyId] = scan.groups
         }
       } catch (error) {
         if (gen === this.gen) {
@@ -410,17 +437,27 @@ export const useStoriesStore = defineStore('stories', {
       await putFolderType({ folderId, type: 'group', markedAt: Date.now() })
       this.groups[folderId] = true
       await clearChaptersCache()
+      this.groupsByStory = {}
       useSyncStore().schedulePush()
     },
 
     async unmarkGroup(folderId: string): Promise<void> {
+      await this.unmarkGroups([folderId])
+    },
+
+    /** Bỏ đánh dấu TẤT CẢ nhóm của 1 truyện (nút "Hủy nhóm" trong StoryPage). */
+    async unmarkGroups(folderIds: string[]): Promise<void> {
+      if (folderIds.length === 0) return
       // Bỏ nhóm cũng đổi hình dạng danh sách → vô hiệu quét đang chạy như markAsGroup
       this.gen++
       this.scanning = {}
-      await deleteFolderType(folderId)
-      await putTombstone(markTombstoneKey(folderId), Date.now())
-      delete this.groups[folderId]
+      for (const folderId of folderIds) {
+        await deleteFolderType(folderId)
+        await putTombstone(markTombstoneKey(folderId), Date.now())
+        delete this.groups[folderId]
+      }
       await clearChaptersCache()
+      this.groupsByStory = {}
       useSyncStore().schedulePush()
     },
 
@@ -467,29 +504,32 @@ export const useStoriesStore = defineStore('stories', {
       const myGen = gen ?? this.gen
 
       if (!force) {
-        const cached = await getCache<ChapterRef[]>(chaptersKey(storyId))
-        // Cache viết trước khi chapter có modifiedTime (thiếu field) → quét lại 1 lần cho đủ
-        if (cached && cached.data.every((chapter) => chapter.modifiedTime !== undefined)) {
+        const cached = await getCache<StoryScanResult>(chaptersKey(storyId))
+        const record = cached ? parseChaptersCache(cached.data) : null
+        // Cache cũ (bare array) hoặc thiếu modifiedTime → quét lại 1 lần cho đủ
+        if (record && record.chapters.every((chapter) => chapter.modifiedTime !== undefined)) {
           if (myGen === this.gen) {
-            this.counts[storyId] = cached.data.length
-            this.latest[storyId] = cached.data[cached.data.length - 1]?.name ?? ''
+            this.counts[storyId] = record.chapters.length
+            this.latest[storyId] = record.chapters[record.chapters.length - 1]?.name ?? ''
+            this.groupsByStory[storyId] = record.groups
           }
-          return cached.data
+          return record.chapters
         }
       }
 
       if (myGen === this.gen) this.scanning[storyId] = true
       try {
-        const chapters = await scanStory(storyId, {
+        const { chapters, groups } = await scanStory(storyId, {
           groupMarks: this.groupMarkSet(),
           onChapterFound: (count) => {
             if (myGen === this.gen) this.counts[storyId] = count
           },
         })
-        await setCache(chaptersKey(storyId), chapters)
+        await setCache(chaptersKey(storyId), { chapters, groups })
         if (myGen === this.gen) {
           this.counts[storyId] = chapters.length
           this.latest[storyId] = chapters[chapters.length - 1]?.name ?? ''
+          this.groupsByStory[storyId] = groups
         }
         return chapters
       } catch (error) {

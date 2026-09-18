@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-import type { ChapterRef, StorySummary, WalkLibraryResult } from '@/lib/scanner'
+import type { ChapterRef, StorySummary, StoryScanResult, WalkLibraryResult } from '@/lib/scanner'
 import { useLibraryStore } from '../library'
 import { useStoriesStore } from '../stories'
 
@@ -20,7 +20,7 @@ const listStories = vi.fn<(folderId: string) => Promise<StorySummary[]>>(async (
   },
 ])
 
-/** walkLibrary: ngày mọi truyện = modifiedTime; truyện đánh dấu có 3 chapter cùng ngày. */
+/** walkLibrary: ngày mọi truyện = modifiedTime; truyện đánh dấu có 3 chapter cùng ngày + 1 nhóm. */
 const walkLibrary = vi.fn<
   (
     stories: StorySummary[],
@@ -34,6 +34,7 @@ const walkLibrary = vi.fn<
 >(async (stories, options) => {
   const lastModified = new Map<string, string | undefined>()
   const chapters = new Map<string, ChapterRef[]>()
+  const groups = new Map<string, import('@/lib/scanner').GroupRef[]>()
   for (const story of stories) {
     const modifiedTime = story.lastModified ?? story.modifiedTime
     lastModified.set(story.id, modifiedTime)
@@ -43,13 +44,14 @@ const walkLibrary = vi.fn<
         { id: `${story.id}-c2`, name: '2', modifiedTime },
         { id: `${story.id}-c10`, name: '10', modifiedTime },
       ])
+      groups.set(story.id, [{ id: `${story.id}-grp`, name: '0-80' }])
     }
   }
   options?.onDates?.(new Map(lastModified))
   options?.onLevelDone?.(
     new Map([...chapters].map(([storyId, list]) => [storyId, list.length])),
   )
-  return { lastModified, chapters }
+  return { lastModified, chapters, groups }
 })
 
 /** fetchNewChapters: merge cache với 1 chapter mới "10". */
@@ -69,17 +71,20 @@ const refreshStoryDates = vi.fn<(stories: StorySummary[]) => Promise<Map<string,
   async () => new Map(),
 )
 
-const scanStories = vi.fn<(stories: StorySummary[]) => Promise<Map<string, ChapterRef[]>>>(
+const scanStories = vi.fn<(stories: StorySummary[]) => Promise<Map<string, StoryScanResult>>>(
   async (stories) => {
-    const map = new Map<string, ChapterRef[]>()
+    const map = new Map<string, StoryScanResult>()
     for (const story of stories) {
       // Chapter mang ngày của truyện → cache sau khi quét là "fresh" so với lastModified
       const modifiedTime = story.lastModified ?? story.modifiedTime
-      map.set(story.id, [
-        { id: `${story.id}-c1`, name: '1', modifiedTime },
-        { id: `${story.id}-c2`, name: '2', modifiedTime },
-        { id: `${story.id}-c10`, name: '10', modifiedTime },
-      ])
+      map.set(story.id, {
+        chapters: [
+          { id: `${story.id}-c1`, name: '1', modifiedTime },
+          { id: `${story.id}-c2`, name: '2', modifiedTime },
+          { id: `${story.id}-c10`, name: '10', modifiedTime },
+        ],
+        groups: [{ id: `${story.id}-grp`, name: '0-80' }],
+      })
     }
     return map
   },
@@ -88,10 +93,10 @@ const scanStory = vi.fn<
   (
     storyId: string,
     options?: { groupMarks?: Set<string>; onChapterFound?: (count: number) => void },
-  ) => Promise<ChapterRef[]>
+  ) => Promise<StoryScanResult>
 >(async (storyId) => {
   const results = await scanStories([{ id: storyId, name: '' }])
-  return results.get(storyId) ?? []
+  return results.get(storyId) ?? { chapters: [], groups: [] }
 })
 
 vi.mock('@/lib/scanner', async (importOriginal) => {
@@ -313,10 +318,13 @@ describe('storiesStore.openLibrary (không auto-detect)', () => {
     })
     cacheStore.set('chapters:story-2', {
       key: 'chapters:story-2',
-      data: [
-        { id: 'story-2-c1', name: '1', modifiedTime: '2026-09-14T08:00:00.000Z' },
-        { id: 'story-2-c2', name: '2', modifiedTime: '2026-09-14T08:00:00.000Z' },
-      ],
+      data: {
+        chapters: [
+          { id: 'story-2-c1', name: '1', modifiedTime: '2026-09-14T08:00:00.000Z' },
+          { id: 'story-2-c2', name: '2', modifiedTime: '2026-09-14T08:00:00.000Z' },
+        ],
+        groups: [{ id: 'story-2-grp', name: '0-80' }],
+      },
       fetchedAt: 1,
     })
 
@@ -328,6 +336,8 @@ describe('storiesStore.openLibrary (không auto-detect)', () => {
     expect(scanStories).not.toHaveBeenCalled() // không quét lại toàn bộ truyện
     expect(storiesStore.counts['story-2']).toBe(3)
     expect(storiesStore.latest['story-2']).toBe('10')
+    // Incremental không gặp lại nhóm cũ → giữ nguyên groups từ cache
+    expect(storiesStore.groupsByStory['story-2']).toEqual([{ id: 'story-2-grp', name: '0-80' }])
 
     // Cache đã được ghi đè bằng kết quả merge → mở lại KHÔNG gọi gì thêm
     await storiesStore.openLibrary('uuid-noi-bo')
@@ -369,10 +379,13 @@ describe('storiesStore.openLibrary (không auto-detect)', () => {
     // Chapter cache của story-2 đang fresh so với 16/09
     cacheStore.set('chapters:story-2', {
       key: 'chapters:story-2',
-      data: [
-        { id: 'story-2-c1', name: '1', modifiedTime: '2026-09-16T08:00:00.000Z' },
-        { id: 'story-2-c2', name: '2', modifiedTime: '2026-09-16T08:00:00.000Z' },
-      ],
+      data: {
+        chapters: [
+          { id: 'story-2-c1', name: '1', modifiedTime: '2026-09-16T08:00:00.000Z' },
+          { id: 'story-2-c2', name: '2', modifiedTime: '2026-09-16T08:00:00.000Z' },
+        ],
+        groups: [],
+      },
       fetchedAt: 1,
     })
     // Incremental phát hiện story-2 có chap mới 18/09
@@ -449,10 +462,13 @@ describe('storiesStore.openLibrary (không auto-detect)', () => {
     })
     cacheStore.set('chapters:story-2', {
       key: 'chapters:story-2',
-      data: [
-        { id: 'story-2-c1', name: '1', modifiedTime: '2026-09-16T08:00:00.000Z' },
-        { id: 'story-2-c2', name: '2', modifiedTime: '2026-09-16T08:00:00.000Z' },
-      ],
+      data: {
+        chapters: [
+          { id: 'story-2-c1', name: '1', modifiedTime: '2026-09-16T08:00:00.000Z' },
+          { id: 'story-2-c2', name: '2', modifiedTime: '2026-09-16T08:00:00.000Z' },
+        ],
+        groups: [],
+      },
       fetchedAt: 1,
     })
 
@@ -584,7 +600,10 @@ describe('storiesStore.refreshMarkedChapters (folder con đã đánh dấu — w
     const storiesStore = await setupMarkedStory()
     cacheStore.set('chapters:story-9', {
       key: 'chapters:story-9',
-      data: [{ id: 'story-9-c1', name: '1', modifiedTime: '2026-09-14T08:00:00.000Z' }],
+      data: {
+        chapters: [{ id: 'story-9-c1', name: '1', modifiedTime: '2026-09-14T08:00:00.000Z' }],
+        groups: [],
+      },
       fetchedAt: 1,
     })
 
@@ -610,10 +629,13 @@ describe('storiesStore.refreshMarkedChapters (folder con đã đánh dấu — w
     const storiesStore = await setupMarkedStory()
     cacheStore.set('chapters:story-9', {
       key: 'chapters:story-9',
-      data: [
-        { id: 'story-9-c1', name: '1', modifiedTime: '2026-09-16T08:00:00.000Z' },
-        { id: 'story-9-c2', name: '2', modifiedTime: '2026-09-16T08:00:00.000Z' },
-      ],
+      data: {
+        chapters: [
+          { id: 'story-9-c1', name: '1', modifiedTime: '2026-09-16T08:00:00.000Z' },
+          { id: 'story-9-c2', name: '2', modifiedTime: '2026-09-16T08:00:00.000Z' },
+        ],
+        groups: [],
+      },
       fetchedAt: 1,
     })
 
@@ -673,10 +695,13 @@ describe('storiesStore.refreshMarkedChapters (folder con đã đánh dấu — w
     // Cache cũ: 2 chapter (sẽ bị thay bằng list 3-chapter tính theo groupMarks cũ)
     cacheStore.set('chapters:story-9', {
       key: 'chapters:story-9',
-      data: [
-        { id: 'story-9-c1', name: '1', modifiedTime: '2026-09-14T08:00:00.000Z' },
-        { id: 'story-9-c2', name: '2', modifiedTime: '2026-09-14T08:00:00.000Z' },
-      ],
+      data: {
+        chapters: [
+          { id: 'story-9-c1', name: '1', modifiedTime: '2026-09-14T08:00:00.000Z' },
+          { id: 'story-9-c2', name: '2', modifiedTime: '2026-09-14T08:00:00.000Z' },
+        ],
+        groups: [],
+      },
       fetchedAt: 1,
     })
 
@@ -711,8 +736,8 @@ describe('storiesStore.refreshMarkedChapters (folder con đã đánh dấu — w
     await refresh
 
     // Danh sách 3-chapter tính theo groupMarks cũ bị vứt — cache/counts giữ nguyên
-    const cached = cacheStore.get('chapters:story-9')?.data as ChapterRef[] | undefined
-    expect(cached?.map((chapter) => chapter.name)).toEqual(['1', '2'])
+    const cached = cacheStore.get('chapters:story-9')?.data as StoryScanResult | undefined
+    expect(cached?.chapters.map((chapter) => chapter.name)).toEqual(['1', '2'])
     expect(storiesStore.counts['story-9']).toBeUndefined()
     expect(storiesStore.latest['story-9']).toBeUndefined()
   })
@@ -846,5 +871,87 @@ describe('storiesStore.markAsStory / unmarkStory / markAsGroup / markAsList', ()
     expect(storiesStore.marks['story-1']).toBe('story')
     expect(storiesStore.groups['story-1-c1']).toBe(true)
     expect(storiesStore.lists['drop-truyen']).toBe(true)
+  })
+})
+
+describe('storiesStore.unmarkGroups (nút Hủy nhóm — StoryPage)', () => {
+  it('bỏ đánh dấu nhiều nhóm cùng lúc: xóa folderTypes + tombstone + reset groupsByStory', async () => {
+    setupLibrary()
+    const storiesStore = useStoriesStore()
+    await storiesStore.markAsGroup('story-1-grp1')
+    await storiesStore.markAsGroup('story-1-grp2')
+    storiesStore.groupsByStory['story-1'] = [
+      { id: 'story-1-grp1', name: '0-80' },
+      { id: 'story-1-grp2', name: '81-160' },
+    ]
+
+    await storiesStore.unmarkGroups(['story-1-grp1', 'story-1-grp2'])
+
+    expect(folderTypeStore.has('story-1-grp1')).toBe(false)
+    expect(folderTypeStore.has('story-1-grp2')).toBe(false)
+    expect(storiesStore.groups['story-1-grp1']).toBeUndefined()
+    expect(storiesStore.groups['story-1-grp2']).toBeUndefined()
+    expect(storiesStore.groupsByStory).toEqual({})
+    expect([...tombstoneStore.keys()]).toEqual(
+      expect.arrayContaining(['mark:story-1-grp1', 'mark:story-1-grp2']),
+    )
+  })
+
+  it('unmarkGroup (1 nhóm — FolderPage) chạy qua unmarkGroups', async () => {
+    setupLibrary()
+    const storiesStore = useStoriesStore()
+    await storiesStore.markAsGroup('story-1-grp1')
+
+    await storiesStore.unmarkGroup('story-1-grp1')
+
+    expect(folderTypeStore.has('story-1-grp1')).toBe(false)
+    expect(storiesStore.groups['story-1-grp1']).toBeUndefined()
+    expect([...tombstoneStore.keys()]).toContain('mark:story-1-grp1')
+  })
+
+  it('quét full ghi cache kèm nhóm + groupsByStory (nguồn cho nút Hủy nhóm)', async () => {
+    setupLibrary()
+    const storiesStore = useStoriesStore()
+
+    const chapters = await storiesStore.ensureChapters('uuid-noi-bo', 'story-1')
+
+    expect(chapters).toHaveLength(3)
+    expect(storiesStore.groupsByStory['story-1']).toEqual([{ id: 'story-1-grp', name: '0-80' }])
+    const record = cacheStore.get('chapters:story-1')?.data as StoryScanResult | undefined
+    expect(record?.groups).toEqual([{ id: 'story-1-grp', name: '0-80' }])
+  })
+
+  it('cache chapter đời cũ (bare array) → coi như miss, quét lại 1 lần', async () => {
+    setupLibrary()
+    cacheStore.set('chapters:story-1', {
+      key: 'chapters:story-1',
+      data: [{ id: 'story-1-c1', name: '1', modifiedTime: '2026-09-15T08:00:00.000Z' }],
+      fetchedAt: 1,
+    })
+    const storiesStore = useStoriesStore()
+
+    const chapters = await storiesStore.ensureChapters('uuid-noi-bo', 'story-1')
+
+    expect(scanStory).toHaveBeenCalledTimes(1) // cache cũ không parse được → quét lại
+    expect(chapters).toHaveLength(3)
+  })
+
+  it('cache-hit (không force) → điền groupsByStory từ cache, không quét lại', async () => {
+    setupLibrary()
+    cacheStore.set('chapters:story-1', {
+      key: 'chapters:story-1',
+      data: {
+        chapters: [{ id: 'story-1-c1', name: '1', modifiedTime: '2026-09-15T08:00:00.000Z' }],
+        groups: [{ id: 'story-1-grp', name: '0-80' }],
+      },
+      fetchedAt: 1,
+    })
+    const storiesStore = useStoriesStore()
+
+    const chapters = await storiesStore.ensureChapters('uuid-noi-bo', 'story-1')
+
+    expect(scanStory).not.toHaveBeenCalled()
+    expect(chapters).toHaveLength(1)
+    expect(storiesStore.groupsByStory['story-1']).toEqual([{ id: 'story-1-grp', name: '0-80' }])
   })
 })

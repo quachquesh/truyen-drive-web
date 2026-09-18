@@ -164,6 +164,29 @@ function markGroup(chapter: ChapterRef): void {
     },
   })
 }
+
+/** Các nhóm đã đánh dấu của truyện (thu được khi quét subtree) */
+const storyGroups = computed(() => storiesStore.groupsByStory[storyId.value] ?? [])
+
+/** Hủy toàn bộ nhóm đã đánh dấu → folder nhóm hiện lại thành chapter như ban đầu */
+function unmarkAllGroups(): void {
+  const groups = storyGroups.value
+  if (!groups.length) return
+  // Liệt kê tối đa 5 tên rồi rút gọn — dialog không cao tràn màn hình nhỏ
+  const shown = groups.slice(0, 5).map((group) => `"${group.name}"`).join(', ')
+  const hidden = groups.length - 5
+  const nameList = hidden > 0 ? `${shown}… và ${hidden} nhóm khác` : shown
+  dialog.warning({
+    title: `Hủy ${groups.length} nhóm đã đánh dấu?`,
+    content: `Các nhóm ${nameList} sẽ bị bỏ đánh dấu — folder nhóm hiện lại thành chapter như ban đầu. Danh sách sẽ quét lại sau khi hủy.`,
+    positiveText: 'Hủy nhóm',
+    negativeText: 'Để lại',
+    onPositiveClick: async () => {
+      await storiesStore.unmarkGroups(groups.map((group) => group.id))
+      await load(true)
+    },
+  })
+}
 </script>
 
 <template>
@@ -220,6 +243,18 @@ function markGroup(chapter: ChapterRef): void {
           <AppIcon name="refresh" :size="14" />
         </template>
         Làm mới
+      </NButton>
+      <NButton
+        v-if="storyGroups.length"
+        size="small"
+        quaternary
+        title="Bỏ đánh dấu tất cả nhóm chapter — folder nhóm hiện lại thành chapter"
+        @click="unmarkAllGroups"
+      >
+        <template #icon>
+          <AppIcon name="layers" :size="14" />
+        </template>
+        Hủy nhóm ({{ storyGroups.length }})
       </NButton>
       <NButton
         v-if="storiesStore.marks[storyId]"

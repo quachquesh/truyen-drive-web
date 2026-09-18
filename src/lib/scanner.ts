@@ -33,6 +33,22 @@ export interface ChapterRef {
   modifiedTime?: string
 }
 
+/**
+ * Folder được USER đánh dấu là nhóm chapter — thu lại khi quét subtree của
+ * truyện để biết NHÓM NÀO thuộc truyện nào (nhóm bị bung nên không xuất hiện
+ * trong danh sách chapter).
+ */
+export interface GroupRef {
+  id: string
+  name: string
+}
+
+/** Kết quả quét chapter 1 truyện: danh sách chapter + các nhóm đã bung gặp trong subtree. */
+export interface StoryScanResult {
+  chapters: ChapterRef[]
+  groups: GroupRef[]
+}
+
 /** Chapter + danh sách file đã resolve (image-mode hoặc pdf-mode). */
 export interface ChapterWithFiles extends ChapterRef {
   files: ChapterFile[]
@@ -102,6 +118,8 @@ export interface WalkLibraryResult {
   lastModified: Map<string, string | undefined>
   /** storyId → danh sách chapter (chỉ có truyện được đánh dấu) */
   chapters: Map<string, ChapterRef[]>
+  /** storyId → các nhóm đã đánh dấu gặp trong subtree (chỉ có truyện được đánh dấu) */
+  groups: Map<string, GroupRef[]>
 }
 
 /**
@@ -128,9 +146,11 @@ export async function walkLibrary(
     stories.map((story) => [story.id, story.modifiedTime]),
   )
   const chaptersOf = new Map<string, ChapterRef[]>()
+  const groupsOf = new Map<string, GroupRef[]>()
   const owner = new Map<string, string>()
   for (const story of stories) {
     chaptersOf.set(story.id, [])
+    groupsOf.set(story.id, [])
     owner.set(story.id, story.id)
   }
 
@@ -167,7 +187,10 @@ export async function walkLibrary(
         owner.set(child.id, storyId)
         if (groupMarks.has(child.id)) {
           // Nhóm đã đánh dấu → bung con lên (tầng sau); chỉ cần với truyện đánh dấu
-          if (marked) nextLevel.push(child)
+          if (marked) {
+            nextLevel.push(child)
+            groupsOf.get(storyId)?.push({ id: child.id, name: child.name })
+          }
         } else if (marked) {
           chaptersOf
             .get(storyId)
@@ -182,11 +205,13 @@ export async function walkLibrary(
   }
 
   const chapters = new Map<string, ChapterRef[]>()
+  const groups = new Map<string, GroupRef[]>()
   for (const story of stories) {
     if (!markedIds.has(story.id)) continue
     chapters.set(story.id, naturalSort(chaptersOf.get(story.id) ?? [], (chapter) => chapter.name))
+    groups.set(story.id, groupsOf.get(story.id) ?? [])
   }
-  return { lastModified: latest, chapters }
+  return { lastModified: latest, chapters, groups }
 }
 
 /**
@@ -316,13 +341,15 @@ interface ExpandFolder {
 export async function scanStories(
   stories: StorySummary[],
   options: ScanOptions = {},
-): Promise<Map<string, ChapterRef[]>> {
+): Promise<Map<string, StoryScanResult>> {
   const chaptersOf = new Map<string, ChapterRef[]>()
+  const groupsOf = new Map<string, GroupRef[]>()
   const owner = new Map<string, string>()
   const groupMarks = options.groupMarks ?? new Set<string>()
 
   for (const story of stories) {
     chaptersOf.set(story.id, [])
+    groupsOf.set(story.id, [])
     owner.set(story.id, story.id)
   }
 
@@ -356,8 +383,9 @@ export async function scanStories(
         if (owner.has(child.id)) continue
         owner.set(child.id, storyId)
         if (groupMarks.has(child.id)) {
-          // Nhóm đã đánh dấu → đưa con của nó lên (mở rộng tầng sau)
+          // Nhóm đã đánh dấu → đưa con của nó lên (mở rộng tầng sau) + ghi lại
           nextLevel.push(child)
+          groupsOf.get(storyId)?.push({ id: child.id, name: child.name })
         } else {
           chaptersOf
             .get(storyId)
@@ -370,12 +398,12 @@ export async function scanStories(
     options.onLevelDone?.(currentCounts(stories, chaptersOf))
   }
 
-  const result = new Map<string, ChapterRef[]>()
+  const result = new Map<string, StoryScanResult>()
   for (const story of stories) {
-    result.set(
-      story.id,
-      naturalSort(chaptersOf.get(story.id) ?? [], (chapter) => chapter.name),
-    )
+    result.set(story.id, {
+      chapters: naturalSort(chaptersOf.get(story.id) ?? [], (chapter) => chapter.name),
+      groups: groupsOf.get(story.id) ?? [],
+    })
   }
   return result
 }
@@ -397,7 +425,7 @@ export async function scanStory(
     onChapterFound?: (count: number) => void
     groupMarks?: Set<string>
   } = {},
-): Promise<ChapterRef[]> {
+): Promise<StoryScanResult> {
   const result = await scanStories([{ id: storyFolderId, name: '' }], {
     signal: options.signal,
     groupMarks: options.groupMarks,
@@ -406,7 +434,7 @@ export async function scanStory(
       if (count) options.onChapterFound?.(count)
     },
   })
-  return result.get(storyFolderId) ?? []
+  return result.get(storyFolderId) ?? { chapters: [], groups: [] }
 }
 
 // ---------- chapter files (lazy, chỉ lấy khi mở chapter) ----------

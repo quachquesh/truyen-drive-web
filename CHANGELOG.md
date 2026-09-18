@@ -4,6 +4,21 @@ Các thay đổi đáng chú ý của project được ghi ở file này theo fo
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-09-18
+
+### Added
+
+- Nút "Hủy nhóm (N)" trong trang truyện: hủy tất cả nhóm chapter đã đánh dấu của truyện đó một lần — folder nhóm hiện lại thành chapter như ban đầu; trước đó phải vào từng folder để bỏ đánh dấu từng cái
+- Tab trình duyệt hiện tên truyện đang đọc khi ở trong reader, rời khỏi reader thì về "Truyện Drive"
+
+### Changed
+
+- Đánh dấu / hủy nhóm chapter chỉ xóa cache của đúng truyện liên quan thay vì toàn kho — quay lại thư viện không còn quét lại mọi truyện (giảm từ ~7 xuống ~5 request Drive cho mỗi lần đánh dấu nhóm); đánh dấu nhóm từ thiết bị khác cũng bỏ cache đúng truyện, còn đánh dấu truyện/danh sách từ sync không còn đụng cache nào
+
+### Fixed
+
+- Dòng "Đang đọc" trên card truyện biến mất sau khi cập nhật lên bản này — cache chapter đổi định dạng làm lỗi bước tính lại vị trí đọc theo danh sách hiện tại
+
 ## [1.0.3] — 2026-09-18
 
 ### Changed

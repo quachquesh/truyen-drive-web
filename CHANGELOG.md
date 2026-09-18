@@ -4,6 +4,13 @@ Các thay đổi đáng chú ý của project được ghi ở file này theo fo
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-09-18
+
+### Added
+
+- Banner "Tiếp tục đọc" đầu trang kho: hiện truyện đang đọc gần nhất kèm tên chương, vị trí x/y và thời gian đọc gần nhất — bấm 1 cái vào thẳng đúng vị trí đang đọc thay vì phải vào tận trang truyện; đang đọc trên thiết bị khác (vd PC) thì mở app là tiến độ đã được kéo về và banner tự nhảy số khi có vị trí mới hơn
+- Vệt mỏng dưới đáy banner cho biết vị trí cuộn hiện tại trong chương; nút phát có nhịp sáng nhẹ hướng mắt, tắt khi hệ thống bật chế độ giảm chuyển động
+
 ## [1.1.0] — 2026-09-18
 
 ### Added

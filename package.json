@@ -1,6 +1,6 @@
 {
   "name": "truyen-drive-web",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Đọc truyện tranh từ kho Google Drive riêng tư — web app thuần client (Vue 3 + TypeScript), không backend.",
   "keywords": [
     "manga-reader",

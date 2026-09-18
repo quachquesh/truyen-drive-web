@@ -4,9 +4,10 @@ import { useRoute, useRouter } from "vue-router";
 import { NAlert, NButton, NEmpty, NGrid, NGridItem, NInput, NSelect, NSpin, NText } from "naive-ui";
 
 import AppIcon from "@/components/AppIcon.vue";
+import ContinueBanner from "@/components/ContinueBanner.vue";
 import StoryCard from "@/components/StoryCard.vue";
 import { getAllProgress, getCache, type ProgressRecord } from "@/lib/db";
-import { applyLiveProgress } from "@/lib/progress";
+import { applyLiveProgress, latestProgress } from "@/lib/progress";
 import { parseChaptersCache, type StoryScanResult } from "@/lib/scanner";
 import { useLibraryStore } from "@/stores/library";
 import { useStoriesStore } from "@/stores/stories";
@@ -110,6 +111,28 @@ watch(
   () => void refreshProgress(),
 );
 
+/** Truyện đọc gần nhất trong kho đang mở — banner "Tiếp tục đọc" 1 chạm.
+ * Truyện không còn trong danh sách (đã xóa/chưa load) → ẩn banner. */
+const continueStory = computed(() => {
+  const records = Object.values(progressByStory.value).filter(
+    (record): record is ProgressRecord => record !== undefined,
+  );
+  const latest = latestProgress(records);
+  if (!latest) return undefined;
+  const storyId = latest.key.slice(`${libId.value}:`.length);
+  const story = storiesStore.stories.find((item) => item.id === storyId);
+  return story ? { story, record: latest } : undefined;
+});
+
+/** Vào thẳng reader — ReaderPage tự phục hồi vị trí cuộn đã sync từ máy khác */
+function continueReading(record: ProgressRecord): void {
+  const storyId = record.key.slice(`${libId.value}:`.length);
+  void router.push({
+    name: "reader",
+    params: { libId: libId.value, storyId, chapterId: record.chapterId },
+  });
+}
+
 /** Card đã đánh dấu → vào chapter; chưa đánh dấu → xem nội dung để quyết định */
 function onCardClick(story: { id: string; name: string }): void {
   if (storiesStore.marks[story.id]) {
@@ -190,6 +213,14 @@ async function markAndRead(story: { id: string; name: string }): Promise<void> {
         @close="storiesStore.listError = ''"
       />
 
+      <ContinueBanner
+        v-if="continueStory"
+        class="continue-banner"
+        :story-name="continueStory.story.name"
+        :progress="continueStory.record"
+        @open="continueReading"
+      />
+
       <div v-if="storiesStore.listLoading && !storiesStore.stories.length" class="center-msg">
         <NSpin />
         <NText depth="3">Đang tải danh sách truyện...</NText>
@@ -249,6 +280,10 @@ async function markAndRead(story: { id: string; name: string }): Promise<void> {
 
 .spacer {
   flex: 1;
+}
+
+.continue-banner {
+  margin-bottom: 16px;
 }
 
 .empty-icon {

@@ -28,6 +28,18 @@ export function displayProgress(
  * chèn/bỏ chapter làm lệch số thứ tự. Thiếu danh sách hoặc chapter không còn
  * trong đó (VD nhóm vừa thay chính chapter đang đọc) → trả nguyên record.
  */
+/**
+ * Record đọc gần nhất (updatedAt lớn nhất) — cho banner "Tiếp tục đọc" ở trang
+ * chủ. Bằng nhau giữ record đầu (thứ tự ổn định); mảng rỗng → undefined.
+ */
+export function latestProgress(records: ProgressRecord[]): ProgressRecord | undefined {
+  let best: ProgressRecord | undefined
+  for (const item of records) {
+    if (!best || item.updatedAt > best.updatedAt) best = item
+  }
+  return best
+}
+
 export function applyLiveProgress(
   record: ProgressRecord,
   chapters: ChapterRef[] | undefined,

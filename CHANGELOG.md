@@ -4,65 +4,78 @@ Các thay đổi đáng chú ý của project được ghi ở file này theo fo
 
 ## [Unreleased]
 
+## [1.2.2] — 2026-09-19
+
+### Fixed
+
+- Ngày cập nhật trên card sai sau khi đánh dấu nhóm chapter
+- Làm mới không phát hiện chap mới thêm vào bên trong nhóm chapter
+- Folder nhóm bị đổi tên gây quét incremental lặp mãi mỗi lần vào trang
+- Trộn tên "CHAP x" lẫn số thuần làm hiện sai "mới nhất" (collation dồn CHAP xuống cuối) — giờ sort theo số trong tên; cache cũ tự sort lại khi đọc, không cần migration
+
+### Changed
+
+- Ngày cập nhật tính theo ngày các chapter hiện có, bỏ ngày folder truyện (nhiễu khi đổi tên/đổi quyền)
+
 ## [1.2.1] — 2026-09-19
 
 ### Fixed
 
-- Bấm "Làm mới" ở trang kho/thư mục làm ngày cập nhật trên card truyện nhảy về ngày sai của folder và đứng yên ở đó (phải vào lại trang mới thấy đúng) — dữ liệu vẫn ghi đúng nhưng giao diện không được báo để vẽ lại; giờ ngày cập nhật ngay sau khi làm mới, kể cả truyện chưa phân loại
-- "Làm mới" giờ cũng tính ngày folder truyện bị sửa trực tiếp (đổi tên...) — trước đó loại thay đổi này chỉ hiện đúng khi app quét lần đầu
+- Ngày cập nhật trên card không vẽ lại sau khi bấm Làm mới
+- Làm mới tính cả ngày folder truyện bị sửa trực tiếp (đổi tên...)
 
 ## [1.2.0] — 2026-09-18
 
 ### Added
 
-- Banner "Tiếp tục đọc" đầu trang kho: hiện truyện đang đọc gần nhất kèm tên chương, vị trí x/y và thời gian đọc gần nhất — bấm 1 cái vào thẳng đúng vị trí đang đọc thay vì phải vào tận trang truyện; đang đọc trên thiết bị khác (vd PC) thì mở app là tiến độ đã được kéo về và banner tự nhảy số khi có vị trí mới hơn
-- Vệt mỏng dưới đáy banner cho biết vị trí cuộn hiện tại trong chương; nút phát có nhịp sáng nhẹ hướng mắt, tắt khi hệ thống bật chế độ giảm chuyển động
+- Banner "Tiếp tục đọc" đầu trang kho — 1 chạm vào đúng vị trí đang đọc, tự nhảy số khi sync từ máy khác
+- Vệt vị trí cuộn + nút phát nhấp nháy nhẹ dưới banner
 
 ## [1.1.0] — 2026-09-18
 
 ### Added
 
-- Nút "Hủy nhóm (N)" trong trang truyện: hủy tất cả nhóm chapter đã đánh dấu của truyện đó một lần — folder nhóm hiện lại thành chapter như ban đầu; trước đó phải vào từng folder để bỏ đánh dấu từng cái
-- Tab trình duyệt hiện tên truyện đang đọc khi ở trong reader, rời khỏi reader thì về "Truyện Drive"
+- Nút "Hủy nhóm (N)" — hủy tất cả nhóm chapter của truyện trong 1 lần
+- Tab trình duyệt hiện tên truyện đang đọc
 
 ### Changed
 
-- Đánh dấu / hủy nhóm chapter chỉ xóa cache của đúng truyện liên quan thay vì toàn kho — quay lại thư viện không còn quét lại mọi truyện (giảm từ ~7 xuống ~5 request Drive cho mỗi lần đánh dấu nhóm); đánh dấu nhóm từ thiết bị khác cũng bỏ cache đúng truyện, còn đánh dấu truyện/danh sách từ sync không còn đụng cache nào
+- (Bỏ) đánh dấu nhóm chỉ xóa cache đúng truyện chứa nó (~7 → ~5 request Drive mỗi lần)
 
 ### Fixed
 
-- Dòng "Đang đọc" trên card truyện biến mất sau khi cập nhật lên bản này — cache chapter đổi định dạng làm lỗi bước tính lại vị trí đọc theo danh sách hiện tại
+- Dòng "Đang đọc" trên card biến mất sau khi cập nhật (cache chapter đổi định dạng)
 
 ## [1.0.3] — 2026-09-18
 
 ### Changed
 
-- Card truyện hiện cả tên chương đang đọc kèm số thứ tự — "Đang đọc: Chương 11 (11/12)" thay vì chỉ "45/100"
-- Số "đang đọc x/y" ở nút "Tiếp tục" và card truyện luôn tính theo danh sách chapter hiện tại thay vì số ghi lại lúc đọc — đánh dấu nhóm chapter (vd 3 → 12 chương) hay chương mới được thêm không còn làm sai lệch vị trí
-- Card truyện có hiệu ứng nâng nhẹ khi rê chuột (chỉ desktop, không kẹt trạng thái hover khi chạm trên điện thoại)
+- Card hiện tên chương đang đọc kèm số thứ tự ("Chương 11 (11/12)")
+- Số "đang đọc x/y" tính theo danh sách chapter hiện tại, không lệch khi đánh dấu nhóm/chap mới
+- Hover card truyện (desktop)
 
 ### Fixed
 
-- Nút "Làm mới" trang truyện không quét lại được chapter do lỗi truyền tham số; phân loại lại truyện giờ luôn quét tươi ghi đè snapshot cũ
-- Chủ kho thêm chương mới nhưng số chương / chương mới nhất trên card không cập nhật — cache cũ hơn ngày cập nhật của truyện được tự quét lại, kể cả khi vào truyện từ trang thư mục
-- Đánh dấu nhóm chapter trong lúc app đang quét không còn để kết quả quét cũ ghi đè số chương về danh sách trước khi đánh dấu
+- Nút Làm mới trang truyện không quét lại được (lỗi tham số)
+- Số chương / chương mới nhất không cập nhật khi chủ kho thêm chương
+- Đánh dấu nhóm giữa chừng quét không còn bị kết quả cũ ghi đè
 
 ## [1.0.2] — 2026-09-17
 
 ### Changed
 
-- Ngày trên card truyện giờ là "ngày cập nhật gần nhất" tính cả chap mới bên trong (Drive không đổi ngày folder cha khi thêm con nên trước đó ngày đứng yên dù đã up chap); sắp xếp "Mới cập nhật" theo ngày này, kể cả chapter nằm trong folder nhóm đã đánh dấu
-- Danh sách chapter hiện ngày (dd/MM/yyyy) ngay dưới tên từng chapter
-- Trang thư mục (vd folder "danh sách truyện") cũng tính ngày cập nhật từ nội dung bên trong
-- Lần mở đầu tiên sau khi cập nhật, app tự quét lại danh sách 1 lần để lấy ngày mới (cache cũ thiếu dữ liệu)
+- Ngày trên card là "ngày cập nhật gần nhất" tính cả chap mới; sort "Mới cập nhật" theo ngày này
+- Danh sách chapter hiện ngày dưới tên từng chương
+- Trang thư mục cũng tính ngày cập nhật từ nội dung bên trong
+- Tự quét lại 1 lần sau cập nhật (cache cũ thiếu ngày)
 
 ## [1.0.1] — 2026-09-17
 
 ### Changed
 
-- Bỏ tự động đăng nhập ngầm khi mở trang — mỗi phiên bắt đầu ở trang đăng nhập, bấm nút 1 cái là vào lại (Google không hỏi cấp quyền lại); trong phiên vẫn tự gia hạn token như cũ
-- Cảnh báo "Minh bạch về quyền riêng tư" trên trang đăng nhập, chỉ hiện với người dùng lần đầu: app chạy hoàn toàn trên trình duyệt, không thu thập dữ liệu, mã nguồn công khai trên GitHub
-- Cập nhật Hướng dẫn, Cài đặt, README và `docs/architecture.md` theo luồng đăng nhập mới
+- Bỏ tự động đăng nhập ngầm — mỗi phiên bắt đầu ở trang đăng nhập
+- Cảnh báo minh bạch riêng tư cho người dùng lần đầu
+- Cập nhật Hướng dẫn, Cài đặt, README, `docs/architecture.md`
 
 ## [1.0.0] — 2026-09-16
 
@@ -70,16 +83,15 @@ Bản phát hành chính thức đầu tiên.
 
 ### Added
 
-- Viết lại README + tài liệu chi tiết trong `docs/` (OAuth, cấu trúc Drive, kiến trúc, deploy Cloudflare Pages)
-- Trang **Chính sách bảo mật** (`/privacy`), **Điều khoản sử dụng** (`/terms`), **Hướng dẫn sử dụng** (`/guide`) — public, không cần đăng nhập
-- Issue templates (bug report, feature request)
-- Logo + favicon riêng cho app
-- Đánh dấu folder là **"danh sách nhiều truyện"** tách khỏi kiểu "nhóm chapter" — trang thư mục và card hiện đúng nhãn ("Danh sách truyện" / "Nhóm chapter") thay vì "Chưa phân loại" sau khi đã phân loại
+- Docs đầy đủ (README, OAuth, kiến trúc, deploy Cloudflare Pages)
+- Trang Chính sách bảo mật / Điều khoản / Hướng dẫn (public)
+- Issue templates, logo + favicon
+- Đánh dấu folder "danh sách nhiều truyện" tách khỏi "nhóm chapter"
 
 ### Fixed
 
-- Layout mobile: toolbar reader (nút icon-only, ô nhảy chương co giãn), tiêu đề trang truyện, card trong kho
-- Card truyện không căn cạnh đáy trong cùng hàng grid do selector CSS nhầm class content của naive-ui (`n-card-content` thay vì `n-card__content`)
+- Layout mobile (toolbar reader, tiêu đề trang truyện, card)
+- Card không căn cạnh đáy trong grid (sai selector naive-ui)
 
 ## [0.1.0] — 2026-09-16
 
@@ -87,20 +99,20 @@ Bản đầu tiên đánh số phiên bản — tổng hợp toàn bộ tính n�
 
 ### Added
 
-- Đăng nhập Google (GIS, implicit flow) — token chỉ nằm trong memory, tự khôi phục phiên khi mở lại trang
-- Quản lý nhiều kho truyện: chọn folder trực tiếp từ Drive (duyệt "Đã chia sẻ với tôi" / My Drive, tìm theo tên trên toàn bộ Drive) hoặc dán URL/ID
-- Người dùng tự quyết định cấu trúc: đánh dấu folder là truyện / nhóm chapter, duyệt folder "danh sách truyện" lồng sâu — đánh dấu lưu vĩnh viễn trong IndexedDB
-- Đọc ảnh (lazy-load + prefetch) và PDF (pdf.js) trong cùng reader; nút chuyển Ảnh/PDF cho chapter có cả hai, ghi nhớ lựa chọn
-- Ô nhảy nhanh tới chương bất kỳ ngay trong reader
-- Tiến độ đọc: khôi phục vị trí cuộn, nút "Tiếp tục đọc", card truyện hiện "Đang đọc x/y" (đồng bộ live giữa các tab)
-- Đồng bộ đa thiết bị qua Drive `appDataFolder`: tiến độ, danh sách kho, đánh dấu — last-write-wins, tombstone khi xóa
-- Cache IndexedDB toàn bộ (danh sách, file, blob ảnh/PDF, tiến độ) + nút xóa từng loại và đặt lại toàn bộ app trong Cài đặt
-- Chống rate-limit Drive: batch query, semaphore 4 request, backoff 403/429 tự động
+- Đăng nhập Google (GIS) — token chỉ nằm trong memory
+- Quản lý nhiều kho: chọn folder trên Drive hoặc dán URL/ID
+- Tự phân loại cấu trúc: đánh dấu truyện / nhóm / danh sách, lưu vĩnh viễn
+- Reader ảnh (lazy-load) + PDF (pdf.js) trong cùng giao diện, ghi nhớ lựa chọn
+- Ô nhảy nhanh tới chương bất kỳ
+- Tiến độ đọc + nút "Tiếp tục đọc", đồng bộ live giữa các tab
+- Đồng bộ đa thiết bị qua Drive `appDataFolder` (last-write-wins, tombstone)
+- Cache IndexedDB toàn bộ + nút xóa trong Cài đặt
+- Chống rate-limit Drive (batch, semaphore 4, backoff 403/429)
 - Fallback preview ~2048px cho kho bật "Viewers can't download"
-- Tìm kiếm truyện không cần dấu; sắp xếp theo tên / mới cập nhật
-- Dark/light mode, UI tiếng Việt, responsive cho điện thoại
+- Tìm kiếm không dấu; sắp xếp theo tên / mới cập nhật
+- Dark/light mode, UI tiếng Việt, responsive
 
 ### Fixed
 
-- Reader PDF không render do Vue reactive bao instance pdf.js (dùng `shallowRef`)
-- Guard tạo store IndexedDB trong lúc upgrade database; thêm chế độ đặt lại DB từ đầu
+- PDF không render do Vue reactive bao instance pdf.js (dùng `shallowRef`)
+- Guard tạo store IndexedDB trong lúc upgrade database

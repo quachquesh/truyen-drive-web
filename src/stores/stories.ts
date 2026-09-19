@@ -233,8 +233,10 @@ export const useStoriesStore = defineStore('stories', {
           // Truyện mới xuất hiện trong kho → quét hợp nhất full cho phần đó
           await this.walkStories(toWalk, gen)
           if (gen !== this.gen) return
-          // Truyện đánh dấu có ngày mới hơn chapter cache → fetchNewChapters
-          await this.refreshMarkedChapters(this.stories, gen)
+          // Truyện đánh dấu có ngày mới hơn chapter cache → fetchNewChapters.
+          // probeGroups: Làm mới phải soi cả BÊN TRONG nhóm — Drive không bump
+          // folder nhóm khi thêm con nên cache "tươi" vẫn có thể thiếu chap mới
+          await this.refreshMarkedChapters(this.stories, gen, { probeGroups: true })
         } else {
           // Cold thật (chưa có cache / xóa danh sách đã lưu): quét hợp nhất đầy đủ
           await this.walkStories(freshStories, gen)
@@ -284,6 +286,7 @@ export const useStoriesStore = defineStore('stories', {
           this.counts[storyId] = chapters.length
           this.latest[storyId] = chapters[chapters.length - 1]?.name ?? ''
           this.groupsByStory[storyId] = groups
+          this.syncStoryDate(storyId, chapters)
         }
       } catch {
         for (const story of stories) story.lastModified = story.modifiedTime
@@ -301,8 +304,17 @@ export const useStoriesStore = defineStore('stories', {
      * - cũ hơn lastModified (owner vừa thêm/sửa chap) → fetchNewChapters:
      *   chỉ lấy phần mới hơn mốc cache (1 request/truyện, chạy song song)
      * - chưa có cache / cache cũ thiếu modifiedTime → quét full batch
+     * - Làm mới (probeGroups) với truyện CÓ nhóm: Drive không bump folder
+     *   nhóm khi thêm con → cache có thể "tươi" mà vẫn thiếu chap mới trong
+     *   nhóm → phải soi bên trong (knownGroups), không tin "tươi"
+     *
+     * Mọi nhánh đều syncStoryDate — ngày cập nhật luôn khớp bộ chapter hiện có.
      */
-    async refreshMarkedChapters(stories: StorySummary[], gen: number): Promise<void> {
+    async refreshMarkedChapters(
+      stories: StorySummary[],
+      gen: number,
+      options: { probeGroups?: boolean } = {},
+    ): Promise<void> {
       const marked = stories.filter((story) => this.marks[story.id])
       const incremental: Array<{ story: StorySummary; cached: ChapterRef[]; groups: GroupRef[] }> =
         []
@@ -310,14 +322,16 @@ export const useStoriesStore = defineStore('stories', {
       for (const story of marked) {
         const cached = await getCache<StoryScanResult>(chaptersKey(story.id))
         const record = cached ? parseChaptersCache(cached.data) : null
-        if (record && isChaptersCacheFresh(record.chapters, story)) {
+        const dated =
+          record !== null &&
+          !record.chapters.some((chapter) => chapter.modifiedTime === undefined)
+        const probe = options.probeGroups === true && record !== null && record.groups.length > 0
+        if (record && dated && !probe && isChaptersCacheFresh(record.chapters, story)) {
           this.counts[story.id] = record.chapters.length
           this.latest[story.id] = record.chapters[record.chapters.length - 1]?.name ?? ''
           this.groupsByStory[story.id] = record.groups
-        } else if (
-          record &&
-          !record.chapters.some((chapter) => chapter.modifiedTime === undefined)
-        ) {
+          this.syncStoryDate(story.id, record.chapters)
+        } else if (record && dated) {
           incremental.push({ story, cached: record.chapters, groups: record.groups })
         } else {
           uncached.push(story)
@@ -335,6 +349,7 @@ export const useStoriesStore = defineStore('stories', {
             try {
               const chapters = await fetchNewChapters(story.id, cached, {
                 groupMarks: this.groupMarkSet(),
+                knownGroups: groups,
               })
               return { story, chapters, groups, error: '' }
             } catch (error) {
@@ -359,6 +374,7 @@ export const useStoriesStore = defineStore('stories', {
           this.counts[story.id] = chapters.length
           this.latest[story.id] = chapters[chapters.length - 1]?.name ?? ''
           this.groupsByStory[story.id] = groups
+          this.syncStoryDate(story.id, chapters)
         }
 
         if (fullScan.length === 0) return
@@ -375,6 +391,7 @@ export const useStoriesStore = defineStore('stories', {
           this.counts[storyId] = scan.chapters.length
           this.latest[storyId] = scan.chapters[scan.chapters.length - 1]?.name ?? ''
           this.groupsByStory[storyId] = scan.groups
+          this.syncStoryDate(storyId, scan.chapters)
         }
       } catch (error) {
         if (gen === this.gen) {
@@ -385,6 +402,27 @@ export const useStoriesStore = defineStore('stories', {
           for (const story of all) this.scanning[story.id] = false
         }
       }
+    },
+
+    /**
+     * Ngày cập nhật hiệu dụng = max modifiedTime CÁC CHAPTER HIỆN CÓ — bỏ
+     * modifiedTime của folder truyện: Drive bump folder khi owner đổi tên/
+     * đổi quyền (nhiễu metadata, không phải nội dung mới), còn chap mới thì
+     * luôn tự mang ngày riêng. THAY THẾ giá trị cũ (không max) để lastModified
+     * luôn khớp cachedLatest của chapters cache — cò isChaptersCacheFresh
+     * không bắn sả incremental chỉ vì folder bị đổi tên.
+     *
+     * Gọi sau MỌI lần danh sách chapter được tính lại (scan/merge/cache):
+     * đánh dấu nhóm đưa chap bên trong lên cùng cấp → ngày theo đúng bộ
+     * chapter mới; warm mở trang tính lại từ chapters cache (0 request);
+     * Làm mới tính lại trước khi persist stories cache.
+     */
+    syncStoryDate(storyId: string, chapters: ChapterRef[]): void {
+      const story = this.stories.find((item) => item.id === storyId)
+      if (!story) return
+      // Chapter nào cũng thiếu ngày (Drive không trả) → giữ nguyên giá trị cũ
+      const latest = latestIso(...chapters.map((chapter) => chapter.modifiedTime))
+      if (latest) story.lastModified = latest
     },
 
     /** USER xác nhận folder là truyện → lưu đánh dấu + quét TƯƠI ngay (force). */
@@ -516,6 +554,7 @@ export const useStoriesStore = defineStore('stories', {
             this.counts[storyId] = record.chapters.length
             this.latest[storyId] = record.chapters[record.chapters.length - 1]?.name ?? ''
             this.groupsByStory[storyId] = record.groups
+            this.syncStoryDate(storyId, record.chapters)
           }
           return record.chapters
         }
@@ -534,6 +573,7 @@ export const useStoriesStore = defineStore('stories', {
           this.counts[storyId] = chapters.length
           this.latest[storyId] = chapters[chapters.length - 1]?.name ?? ''
           this.groupsByStory[storyId] = groups
+          this.syncStoryDate(storyId, chapters)
         }
         return chapters
       } catch (error) {

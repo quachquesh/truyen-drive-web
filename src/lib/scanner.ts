@@ -7,7 +7,7 @@ import {
   type DriveItem,
 } from './driveApi'
 import { getCache, setCache } from './db'
-import { naturalSort } from './naturalSort'
+import { chapterSort, naturalSort } from './naturalSort'
 
 export const FOLDER_MIME = 'application/vnd.google-apps.folder'
 export const PDF_MIME = 'application/pdf'
@@ -54,12 +54,19 @@ export interface StoryScanResult {
  * bản cũ (bare array, trước khi có nhóm) trả null để caller coi như MISS → quét
  * lại 1 lần cho đủ. Dùng chung cho store (runScan/refreshMarkedChapters) và
  * LibraryPage (applyLiveProgress) — KHÔNG đọc cache chapter chỗ nào không qua hàm này.
+ *
+ * Danh sách chapter luôn được SORT LẠI theo số trong tên khi đọc: cache đời
+ * cũ ghi theo collation cũ (chữ số trước chữ cái) làm cụm "CHAP x" lồng
+ * vị trí sai — tự chữa ngay lần đọc đầu, không cần migration.
  */
 export function parseChaptersCache(data: unknown): StoryScanResult | null {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null
   const record = data as Partial<StoryScanResult>
   if (!Array.isArray(record.chapters)) return null
-  return { chapters: record.chapters, groups: Array.isArray(record.groups) ? record.groups : [] }
+  return {
+    chapters: chapterSort(record.chapters, (chapter) => chapter.name),
+    groups: Array.isArray(record.groups) ? record.groups : [],
+  }
 }
 
 /** Chapter + danh sách file đã resolve (image-mode hoặc pdf-mode). */
@@ -142,9 +149,10 @@ export interface WalkLibraryResult {
  *   KHÔNG bump modifiedTime của folder cha khi thêm chap mới nên phải tự tính.
  * - Truyện ĐÁNH DẤU: danh sách chapter đầy đủ với đúng 1 cấp tự động + nhóm
  *   (đưa con nhóm lên cùng cấp như scanStories); chỉ subtree của truyện đánh
- *   dấu mới mở rộng tầng nhóm. Truyện chưa đánh dấu không descend — folder nhóm
- *   bị bump ngày khi thêm con nên max con trực tiếp vẫn phản ánh chap mới,
- *   còn chapter của truyện chưa đánh dấu thì không cần.
+ *   dấu mới mở rộng tầng nhóm. Truyện chưa đánh dấu không descend — con trực
+ *   tiếp là tín hiệu tốt nhất có được (nội dung bên trong nhóm không thấy
+ *   đến khi truyện được đánh dấu), còn chapter của truyện chưa đánh dấu thì
+ *   không cần.
  *
  * Requests: 1 listing batch mỗi tầng cho toàn bộ folder đang mở rộng.
  */
@@ -221,7 +229,7 @@ export async function walkLibrary(
   const groups = new Map<string, GroupRef[]>()
   for (const story of stories) {
     if (!markedIds.has(story.id)) continue
-    chapters.set(story.id, naturalSort(chaptersOf.get(story.id) ?? [], (chapter) => chapter.name))
+    chapters.set(story.id, chapterSort(chaptersOf.get(story.id) ?? [], (chapter) => chapter.name))
     groups.set(story.id, groupsOf.get(story.id) ?? [])
   }
   return { lastModified: latest, chapters, groups }
@@ -229,10 +237,14 @@ export async function walkLibrary(
 
 /**
  * Lấy CHỈ phần chapter mới hơn mốc trong cache rồi merge — không list lại
- * toàn bộ truyện (q lọc `modifiedTime >` phía server). Folder NHÓM bị bump
- * ngày khi thêm con → quay về trong kết quả → lấy tiếp chap mới bên trong
- * (đệ quy theo groupMarks). Merge theo id: chapter mới thêm vào, chapter sửa
- * (đổi tên) cập nhật tại chỗ.
+ * toàn bộ truyện (q lọc `modifiedTime >` phía server). Merge theo id: chapter
+ * mới thêm vào, chapter sửa (đổi tên) cập nhật tại chỗ.
+ *
+ * Folder nhóm được soi bằng `knownGroups` (id nhóm lưu trong chapters cache):
+ * Drive KHÔNG bump modifiedTime của folder cha khi thêm con, nên folder nhóm
+ * không bao giờ 'tự quay về' trong kết quả lọc theo mốc — phải gieo sẵn id
+ * nhóm vào mốc quét (mỗi tầng vẫn là 1 request batched cho mọi cha). Nhóm
+ * mới xuất hiện trong kết quả vẫn được bung tiếp như cũ (groupMarks).
  *
  * Trả null khi không merge chắc chắn được (cache thiếu modifiedTime) — caller
  * quét full. Không phát hiện chapter bị XÓA/đưa đi nơi khác — bấm Làm mới
@@ -241,7 +253,12 @@ export async function walkLibrary(
 export async function fetchNewChapters(
   storyId: string,
   cached: ChapterRef[],
-  options: { groupMarks?: Set<string>; signal?: AbortSignal } = {},
+  options: {
+    groupMarks?: Set<string>
+    /** Folder nhóm đã biết trong chapters cache — gieo vào mốc quét để soi bên trong */
+    knownGroups?: GroupRef[]
+    signal?: AbortSignal
+  } = {},
 ): Promise<ChapterRef[] | null> {
   const groupMarks = options.groupMarks ?? new Set<string>()
   // Cache đời cũ thiếu modifiedTime ở chapter nào đó → mốc không tin được
@@ -250,7 +267,7 @@ export async function fetchNewChapters(
   if (threshold === undefined) return null
 
   const chapters = new Map(cached.map((chapter) => [chapter.id, { ...chapter }]))
-  let toExpand = [storyId]
+  let toExpand = [storyId, ...(options.knownGroups ?? []).map((group) => group.id)]
 
   for (let depth = 0; depth < MAX_DEPTH && toExpand.length > 0; depth++) {
     const childrenMap = await listNewChildren(toExpand, threshold, {
@@ -274,7 +291,7 @@ export async function fetchNewChapters(
     toExpand = nextLevel
   }
 
-  return naturalSort([...chapters.values()], (chapter) => chapter.name)
+  return chapterSort([...chapters.values()], (chapter) => chapter.name)
 }
 
 /** Số cha mỗi request khi tính lại ngày incremental (payload nhỏ nhờ lọc mốc). */
@@ -284,6 +301,11 @@ const DATE_CHUNK = 24
  * Tính lại ngày cập nhật hiệu dụng cho các truyện ĐÃ có `lastModified` —
  * chỉ lấy folder con MỚI HƠN mốc cũ (q lọc `modifiedTime >` phía server)
  * thay vì list lại toàn bộ con như walkLibrary. Dùng cho nút Làm mới.
+ *
+ * Ngày hiệu dụng theo CHAP, không theo modifiedTime folder truyện: Drive bump
+ * folder khi đổi tên/đổi quyền — nhiễu metadata, không phải nội dung mới.
+ * Truyện đánh dấu có nhóm được syncStoryDate tính lại từ danh sách chapter
+ * sau bước này (refreshMarkedChapters), nên mốc vẫn chính xác.
  *
  * Truyện được sort theo mốc cũ rồi chunk liền nhau để mốc min của mỗi chunk
  * sát nhau (chunk toàn truyện lâu chưa cập nhật → trả về rỗng). Item cũ
@@ -322,9 +344,6 @@ export async function refreshStoryDates(
       for (const story of chunk) {
         const newest = latestIso(
           story.lastModified,
-          // Ngày folder tươi từ listStories — folder bị bump mà không có con
-          // mới (đổi tên...) vẫn phải lên ngày, khớp seed modifiedTime của walkLibrary
-          story.modifiedTime,
           ...(childrenMap.get(story.id) ?? []).map((child) => child.modifiedTime),
         )
         if (newest !== undefined && newest !== story.lastModified) changed.set(story.id, newest)
@@ -417,7 +436,7 @@ export async function scanStories(
   const result = new Map<string, StoryScanResult>()
   for (const story of stories) {
     result.set(story.id, {
-      chapters: naturalSort(chaptersOf.get(story.id) ?? [], (chapter) => chapter.name),
+      chapters: chapterSort(chaptersOf.get(story.id) ?? [], (chapter) => chapter.name),
       groups: groupsOf.get(story.id) ?? [],
     })
   }

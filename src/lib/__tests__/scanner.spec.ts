@@ -40,6 +40,10 @@ const folders: Record<string, DriveItem[]> = {
   'i-grp': [folder('i-5', '5', '2026-08-10T00:00:00.000Z'), folder('i-8', '8', '2026-09-17T08:00:00.000Z')],
   // Chapter bị sửa (đổi tên) sau mốc cache — fetchNewChapters merge theo id
   ren: [folder('r-1', 'New', '2026-09-17T00:00:00.000Z')],
+  // Nhóm KHÔNG bị bump ngày khi thêm chap mới bên trong (Drive không bump cha)
+  // → chỉ soi bên trong được khi caller truyền knownGroups từ cache
+  inc2: [folder('i2-1', '1', '2026-08-01T00:00:00.000Z'), folder('i2-grp', 'nhom2', '2026-08-01T00:00:00.000Z')],
+  'i2-grp': [folder('i2-8', '8', '2026-09-19T00:00:00.000Z')],
   // Trộn cả ảnh lẫn PDF → ensureChapterFiles ưu tiên ảnh
   mixed: [file('a.jpg', 'image/jpeg'), file('all.pdf', 'application/pdf')],
   // Folder thật sự trống (không file đọc được)
@@ -128,6 +132,7 @@ import {
   scanStory,
   walkLibrary,
   type ChapterRef,
+  type GroupRef,
 } from '../scanner'
 
 beforeEach(() => {
@@ -166,11 +171,12 @@ describe('scanStories / scanStory (1 cấp tự động + đánh dấu nhóm)', 
   })
 
   it('nhóm lồng nhau: đánh dấu cả 2 tầng mới bung hết', async () => {
-    // chỉ đánh dấu tầng ngoài
+    // chỉ đánh dấu tầng ngoài — "Tập 1" là chương 1 (số trong tên) nên đứng trước 9,
+    // khác collation thuần (số trước chữ) vốn xếp ['9', 'Tập 1']
     const { chapters: one, groups: oneGroups } = await scanStory('deep', {
       groupMarks: new Set(['g1']),
     })
-    expect(one.map((chapter) => chapter.name)).toEqual(['9', 'Tập 1'])
+    expect(one.map((chapter) => chapter.name)).toEqual(['Tập 1', '9'])
     expect(oneGroups).toEqual([{ id: 'g1', name: 'Phần 1' }])
 
     // đánh dấu cả tầng trong
@@ -418,6 +424,29 @@ describe('fetchNewChapters (incremental — chỉ lấy phần mới hơn mốc 
     expect(queriedParents).toEqual(new Set(['inc', 'i-grp']))
   })
 
+  it('nhóm KHÔNG bị bump ngày (Drive không bump cha) + knownGroups → vẫn soi bên trong', async () => {
+    const cachedChapters: ChapterRef[] = [
+      { id: 'i2-1', name: '1', modifiedTime: '2026-08-10T00:00:00.000Z' },
+    ]
+    // Chap '8' (19/9) mới thêm vào trong nhóm nhưng folder nhóm vẫn đứng 1/8
+    // → không bao giờ 'tự quay về' trong kết quả lọc theo mốc — phải gieo id nhóm
+    const chapters = await fetchNewChapters('inc2', cachedChapters, {
+      groupMarks: new Set(['i2-grp']),
+      knownGroups: [{ id: 'i2-grp', name: 'nhom2' } satisfies GroupRef],
+    })
+    expect(chapters?.map((chapter) => chapter.name)).toEqual(['1', '8'])
+  })
+
+  it('không có knownGroups → nhóm không bị bump thì không soi (hành vi cũ)', async () => {
+    const cachedChapters: ChapterRef[] = [
+      { id: 'i2-1', name: '1', modifiedTime: '2026-08-10T00:00:00.000Z' },
+    ]
+    const chapters = await fetchNewChapters('inc2', cachedChapters, {
+      groupMarks: new Set(['i2-grp']),
+    })
+    expect(chapters?.map((chapter) => chapter.name)).toEqual(['1'])
+  })
+
   it('chapter bị sửa (cùng id, đổi tên) → cập nhật tại chỗ, không nhân đôi', async () => {
     const chapters = await fetchNewChapters('ren', [
       { id: 'r-1', name: 'Old', modifiedTime: '2026-08-01T00:00:00.000Z' },
@@ -459,7 +488,7 @@ describe('refreshStoryDates (Làm mới — chỉ lấy phần mới hơn mốc 
     expect(changed.has('f-31')).toBe(false)
   })
 
-  it('modifiedTime của folder mới hơn mốc (folder bị đổi tên...) → bump lên ngày folder', async () => {
+  it('folder bị đổi tên (modifiedTime mới hơn mốc) → KHÔNG nhảy ngày — nhiễu metadata', async () => {
     const changed = await refreshStoryDates([
       {
         id: 'f-0-30',
@@ -468,9 +497,10 @@ describe('refreshStoryDates (Làm mới — chỉ lấy phần mới hơn mốc 
         lastModified: '2026-09-16T10:00:00.000Z',
       },
     ])
-    // Không có con mới (c-10 đúng bằng mốc, phần còn lại thiếu ngày) — chỉ ngày
-    // folder tươi từ listStories kéo lastModified lên, khớp walkLibrary cold
-    expect(changed.get('f-0-30')).toBe('2026-09-18T00:00:00.000Z')
+    // Không có con mới (c-10 đúng bằng mốc, phần còn lại thiếu ngày). Đổi tên
+    // folder chỉ là nhiễu metadata của chính folder — ngày hiệu dụng theo
+    // chapter (syncStoryDate tính lại), không theo modifiedTime folder
+    expect(changed.has('f-0-30')).toBe(false)
   })
 
   it('chunk dùng mốc cũ nhất trong chunk (sort theo lastModified trước)', async () => {
@@ -522,6 +552,28 @@ describe('parseChaptersCache (đọc cache chapter 2 shape)', () => {
   it('thiếu groups → điền mảng rỗng', () => {
     const result = parseChaptersCache({ chapters: [] })
     expect(result).toEqual({ chapters: [], groups: [] })
+  })
+
+  // Cache cũ ghi theo collation cũ (số trước chữ) làm cả cụm "CHAP x" tụt
+  // xuống cuối — đọc lên phải sort lại theo số chapter, khỏi cần migration
+  it('cache cũ thứ tự sai (số trước CHAP) → tự sort lại khi đọc (self-heal)', () => {
+    const result = parseChaptersCache({
+      chapters: [
+        { id: 'c-61', name: '61' },
+        { id: 'c-6', name: '6' },
+        { id: 'c-60', name: '60' },
+        { id: 'c-5', name: 'CHAP 5' },
+        { id: 'c-1', name: 'CHAP 1' },
+      ],
+      groups: [],
+    })
+    expect(result?.chapters.map((chapter) => chapter.name)).toEqual([
+      'CHAP 1',
+      'CHAP 5',
+      '6',
+      '60',
+      '61',
+    ])
   })
 
   // Regression: LibraryPage từng truyền cache thô vào applyLiveProgress —

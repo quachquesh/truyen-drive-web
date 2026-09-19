@@ -473,6 +473,14 @@ describe('storiesStore.openLibrary (không auto-detect)', () => {
     })
     // Incremental phát hiện story-2 có chap mới 18/09
     refreshStoryDates.mockResolvedValueOnce(new Map([['story-2', '2026-09-18T08:00:00.000Z']]))
+    // lastModified giờ được tính lại từ ngày các chapter merge được
+    // (syncStoryDate) → mock trả chap mới kèm ĐÚNG ngày đã phát hiện,
+    // như listing Drive thật mà cả 2 luồng cùng thấy
+    fetchNewChapters.mockResolvedValueOnce([
+      { id: 'story-2-c1', name: '1', modifiedTime: '2026-09-16T08:00:00.000Z' },
+      { id: 'story-2-c2', name: '2', modifiedTime: '2026-09-16T08:00:00.000Z' },
+      { id: 'story-2-c10', name: '10', modifiedTime: '2026-09-18T08:00:00.000Z' },
+    ])
 
     const storiesStore = useStoriesStore()
     await storiesStore.openLibrary('uuid-noi-bo', { force: true })
